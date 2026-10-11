@@ -16,6 +16,11 @@
 - Preserve pose device/origin/frame/clock identity and timestamp semantics. Keep Tracker reference pose distinct from a calibrated head pose; do not claim IMU/Lighthouse fusion without implementing and verifying it.
 - BSB support is outside the initial implementation. Preserve extension types and explicit Unsupported stubs without claiming capture support.
 
+## Licensing
+
+- Project code uses `LGPL-3.0-or-later`. Keep Cargo package metadata consistent by inheriting `workspace.package.license`.
+- Keep `LICENSE` (GNU LGPL v3) and `COPYING` (GNU GPL v3, incorporated by LGPL v3) intact. Dependencies retain their own licenses.
+
 ## Build and generated files
 
 - Use Rust/Cargo for required build-time generation. Do not introduce a mandatory Python or standalone generator step.

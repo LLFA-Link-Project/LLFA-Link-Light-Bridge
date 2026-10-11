@@ -6,7 +6,7 @@ members = ["crates/*", "tools/mock-session"]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
-license = "MIT OR Apache-2.0"
+license = "LGPL-3.0-or-later"
 
 [workspace.dependencies]
 light-bridge-core = { path = "crates/light-bridge-core" }

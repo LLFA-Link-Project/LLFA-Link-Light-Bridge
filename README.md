@@ -57,3 +57,10 @@ BSB は None/DirectUsb/UsbMon の拡張型のみ。DirectUsb と UsbMon は Unsu
 [USB/IP 調査](docs/USBIP-RESEARCH.md)、[仕様との差分](docs/DECISIONS.md)、
 [protocol](docs/PROTOCOL.md)、[ABI](docs/FFI-ABI.md)、[時計](docs/CLOCK-SYNC.md)、
 [テスト範囲](docs/TEST-PLAN.md) を参照。
+
+## ライセンス
+
+本プロジェクトは **GNU Lesser General Public License v3.0 またはそれ以降
+(SPDX: `LGPL-3.0-or-later`)** で提供します。
+本文は [LICENSE](LICENSE)、LGPL v3 が参照する GNU GPL v3 の本文は [COPYING](COPYING) を参照してください。
+依存ライブラリにはそれぞれのライセンスが適用されます。
