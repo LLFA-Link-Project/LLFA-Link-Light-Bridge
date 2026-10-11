@@ -51,3 +51,14 @@ p50/p95/p99 は実機導入後に測る。Mock 実行速度を低遅延性能の
 [Backend の実機手順](USBIP-BACKEND.md) と両 handoff の acceptance checklist を実施する。
 実 attach/detach、ケーブル／Wi-Fi 切断、連続再接続、実 tracking driver 検出、HMD IMU 維持、
 runtime 配備、helper service、arm64/MSRV は未検証のまま分けて記録する。
+
+## Phase 4 追加試験
+
+- known offset、正負 drift、varying delay／非対称性を含む synthetic mapping と error budget、high RTT/domain mismatch/backward/reset/expiry。
+- ClockSync codec の全切断位置、旧 wire v2／過大／余剰 payload 拒否。
+- HMD request ID／t1 echo／replay、clock domain fault の session 内無効化と新 session reset。
+- actual TCP＋CLOCK_MONOTONIC＋Mock USB による同期成立／raw reference保持／mapped timing／stale拒否／同期失効／session変更。
+- shared/static C timing API smoke。既存の4 ABI smoke も継続。
+- native libstdc++ steady_clock と CLOCK_MONOTONIC の bracket比較。
+
+実結果は [Phase 4 報告](PHASE-4-REPORT.md)。実ドライバ・Pi・融合の試験とは区別する。

@@ -62,3 +62,12 @@ Phase 2/3/4 相当の実統合、OS USB、時計推定／融合を完成扱い�
 - WiVRn 側の Lighthouse driver 解放後に detach を許可する実装はユーザー報告として記録。実 runtime の検証結果は別途必要。
 - Bridge 使用時の切断再接続は新しい WiVRn Server 子プロセスで行い、古い tracking device を再利用しない。旧 resource の cleanup 確認、新しい instance/session/correlation、fork 後の worker 開始を両 handoff に追記。
 - `/tmp` の既定パスは従来の private-directory 前提の例外。socket permission／peer credential／既存 path の所有確認を維持。実装は各プロジェクトの adapter 側で行う。
+
+## Phase 4 の更新（2026-10-11）
+
+- ユーザー指示によりドライバが報告する姿勢時刻を主軸に採用。raw 値を保持し、追加 sensor timestamp を実装前提にしない。初期 semantics は estimated、query prediction と区別する。
+- Linux CLOCK_MONOTONIC、4 timestamp、最大8点 window、drift affine mapping、期限と不確実性を実装。採時は control queue 境界であり hardware packet timestamp ではない。network asymmetry／sensor精度の解消を主張しない。
+- 本番 TimingConfig と status/reference timing/diagnostics API を追加し Mock 固定 policy の不足を解消。C ABI layout／UDS version=1 を維持、Bridge wire は ClockSync 契約変更でv3、両 runtime の submodule 更新が必須。
+- raw timestamp と mapped timestamp を別々に渡す。Monado の HEAD／IMU／fusion は変更しない。実 source publisher と origin/frame/mount 契約は他 runtime の担当へ引き継ぐ。
+- 実 TCP の新 session 即停止試験で遅延 Hello が stopping 状態を再初期化する競合を修正。停止中は Hello／HMDのPrepareを初期化に使わない。
+- 実機の時刻精度／USBIP／Orange Pi／upstream新API linking／融合は未検証。Phase 4 acceptance をMockだけで完了扱いしない。

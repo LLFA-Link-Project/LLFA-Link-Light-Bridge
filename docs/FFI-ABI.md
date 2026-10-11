@@ -104,3 +104,22 @@ remote TCP 認証・暗号化、transport の差し替え、実 clock synchroniz
 
 helper 配備・policy・残留資源の回収は [USBIP-BACKEND.md](USBIP-BACKEND.md)、
 組み込み順序は [Monado](HANDOFF-MONADO.md)／[WiVRn](HANDOFF-WIVRN.md) を参照。
+
+## Phase 4 本番用時刻 API
+
+既存 C 構造体 layout は維持。新しい `LlbTimingConfig`／`LlbClockStatus`／`LlbReferenceTiming` にも
+size/abi_version を設定する。Bridge wire は v3 なので両 runtime の submodule を同じ commit に更新する。
+
+`llb_configure_timing` を各 handle の start 前に呼ぶ。未接続でも設定でき、TCP 接続時に library へ適用。
+Linux CLOCK_MONOTONIC と選択 Tracker ID／source/local clock IDs、age/future/uncertainty、
+sync interval/request timeout/mapping validity/drift bound を明示する。
+設定後は `llb_mock_clock` を拒否。HMD poll が自動で同期要求を送り、Host poll が応答する。
+
+`llb_get_clock_status` はHMDのみ、未同期も return=0 の status.synchronized=0 で表す。
+`llb_monotonic_time_ns` は両 adapter の domain 確認用。
+`llb_get_reference_timing` は最後に callback へ渡した pose の mapping metadata。
+callback 内の再入は禁止。callback でraw Poseをコピーし、poll復帰後に取得して session/sequence を照合する。
+Stop／同期失効時の metadata 取得は InvalidState。これは較正済み head pose API ではない。
+`llb_get_pose_diagnostics` は rejected count／last reason（0 accepted、1 clock/inactive、2 policy、3 malformed）。
+
+実装契約と driver timestamp の調査は [Phase 4 補足仕様](PHASE-4-TIMING-SPEC.md) を正とする。

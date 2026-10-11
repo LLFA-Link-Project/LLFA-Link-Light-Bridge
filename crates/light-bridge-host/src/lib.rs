@@ -1,4 +1,5 @@
 //! WiVRn-process library. Runtime must release its tracking handles before stop.
+use light_bridge_core::clock::{monotonic_ns, TimingConfig};
 use light_bridge_core::*;
 use light_bridge_protocol::{Kind, Transport};
 use light_bridge_usbip::{
@@ -21,6 +22,8 @@ pub struct HostServer {
     last_kind: Option<Kind>,
     stop_requested: bool,
     last_pose: u64,
+    timing: Option<TimingConfig>,
+    last_clock_request: u64,
 }
 impl HostServer {
     pub fn new(transport: Transport, usb: Arc<Mutex<MockUsbIp>>, timeout: Duration) -> Self {
@@ -38,6 +41,8 @@ impl HostServer {
             last_kind: None,
             stop_requested: false,
             last_pose: 0,
+            timing: None,
+            last_clock_request: 0,
         }
     }
     pub fn with_usb_backend(
@@ -98,6 +103,7 @@ impl HostServer {
         self.last_control = 0;
         self.last_kind = None;
         self.last_pose = 0;
+        self.last_clock_request = 0;
         self.prepare_requested = false;
         self.stop_requested = false;
         self.transport.send(Kind::Hello, id, 1)
@@ -114,6 +120,15 @@ impl HostServer {
             self.transport.send(Kind::Prepare, self.session.id, 2)?;
             self.session.advance(self.session.id, State::PreparingUsb)?;
         }
+        Ok(())
+    }
+    pub fn configure_timing(&mut self, config: TimingConfig) -> Result<()> {
+        if self.session.state != State::Idle {
+            return Err(Error::InvalidState);
+        }
+        config.validate()?;
+        monotonic_ns()?;
+        self.timing = Some(config);
         Ok(())
     }
     pub fn poll(&mut self) -> Result<()> {
@@ -139,6 +154,35 @@ impl HostServer {
                 continue;
             }
             self.session.check(m.session_id)?;
+            if self.session.state == State::Stopping && m.kind == Kind::Hello {
+                continue;
+            }
+            if m.kind == Kind::ClockRequest {
+                if matches!(self.session.state, State::Stopping | State::Failed) {
+                    continue;
+                }
+                let config = self.timing.ok_or(Error::InvalidState)?;
+                let mut x = m.clock.ok_or(Error::Protocol)?;
+                if x.source_clock_id != config.source_clock_id
+                    || x.local_clock_id != config.local_clock_id
+                {
+                    return Err(Error::Protocol);
+                }
+                if m.operation_id <= self.last_clock_request {
+                    continue;
+                }
+                x.t2 = monotonic_ns()?;
+                x.t3 = monotonic_ns()?;
+                match self
+                    .transport
+                    .clock(Kind::ClockReply, m.session_id, m.operation_id, x)
+                {
+                    Ok(()) => self.last_clock_request = m.operation_id,
+                    Err(Error::Backpressure) => {}
+                    Err(e) => return Err(e),
+                }
+                continue;
+            }
             if m.kind == Kind::Heartbeat {
                 self.session.touch();
                 continue;
@@ -216,6 +260,15 @@ impl HostServer {
         }
         if p.sequence <= self.last_pose {
             return Err(Error::Duplicate);
+        }
+        if let Some(config) = self.timing {
+            if p.tracked_device_id != config.tracked_device_id
+                || p.source_clock_id != config.source_clock_id
+                || p.sample_timestamp_ns < 0
+                || p.timestamp_semantics > 2
+            {
+                return Err(Error::InvalidPose);
+            }
         }
         self.transport.publish(p)?;
         self.last_pose = p.sequence;

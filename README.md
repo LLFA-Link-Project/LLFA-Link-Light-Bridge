@@ -1,6 +1,6 @@
 # LLFA-Link-Light-Bridge
 
-実装指示書 v0.3.1 に基づく Phase 0/1、Phase 2 の実 UDS/TCP・Mock 縦断実装、Phase 3 の Linux USB/IP Backend 実装。
+実装指示書 v0.3.1 に基づく Phase 0/1、Phase 2 の実 UDS/TCP・Mock 縦断実装、Phase 3 の Linux USB/IP Backend、Phase 4 の時計同期と参照姿勢 API。
 Monado 内の `light-bridge-hmd` と WiVRn Server 内の `light-bridge-host` を主動作核とする。
 既存 WiVRn／Monado のツリーは変更していない。USB 操作専用の特権 helper を追加したが、
 Bridge の主動作核は両 runtime プロセス内に維持する。
@@ -58,8 +58,8 @@ in-memory bounded transport と、実 TCP（制御／Pose 独立 socket）、実
 別プロセスで試験する。runtime adapters／clock／pose source は Mock のまま。
 Linux kernel backend は標準 usbip CLI と特権 helper を使い、専用 USB worker から操作する。
 C ABI は `llb_configure_kernel_usbip` で明示選択し、`llb_tcp_listen/accept/connect` で接続する。
-未設定時は Mock。Bridge TCP v2 は exact Tracker identity を伝えるが、remote 認証・暗号化は未実装。
-実 USB/IP attach/detach、helper 配備、実 Monado／WiVRn へのリンク、時計推定、融合／較正、
+未設定時は Mock。Bridge TCP v3 は exact Tracker identity を伝えるが、remote 認証・暗号化は未実装。
+実 USB/IP attach/detach、helper 配備、現行 Phase 4 API の Monado／WiVRn へのリンク、実機での時計推定精度、融合／較正、
 Orange Pi arm64 は未検証。現 PC の Tracker inventory の確認を USB/IP 転送成功とは扱わない。
 Phase 3 の実機合格条件は未達。実証環境の準備と回収手順は [USB/IP Backend](docs/USBIP-BACKEND.md) を参照。
 `llb_mock_link` は同一プロセスの test-only 接続。Mock は OS USB を一切操作しない。
@@ -70,7 +70,7 @@ BSB は None/DirectUsb/UsbMon の拡張型のみ。DirectUsb と UsbMon は Unsu
 [Phase 3 実装・検証報告](docs/PHASE-3-REPORT.md)、
 [Phase 0/1 報告](docs/PHASE-0-1-REPORT.md)、[Phase 2 実装・未完了事項](docs/PHASE-2-REPORT.md)、[統合調査](docs/INTEGRATION-NOTES.md)、
 [USB/IP 調査](docs/USBIP-RESEARCH.md)、[仕様との差分](docs/DECISIONS.md)、
-[protocol](docs/PROTOCOL.md)、[ABI](docs/FFI-ABI.md)、[時計](docs/CLOCK-SYNC.md)、
+[protocol](docs/PROTOCOL.md)、[ABI](docs/FFI-ABI.md)、[時計](docs/CLOCK-SYNC.md)、[Phase 4 補足仕様](docs/PHASE-4-TIMING-SPEC.md)、[Phase 4 報告](docs/PHASE-4-REPORT.md)、
 [テスト範囲](docs/TEST-PLAN.md) を参照。
 
 ## ライセンス

@@ -7,8 +7,8 @@ Orange Pi の **Monado プロセス内**に Bridge HMD library を組み込む�
 Tracker USB は Host に転送し、arpara HMD USB／ローカル IMU は Monado に残す。
 本書を含む Bridge commit を `git rev-parse HEAD` で記録し、WiVRn 担当と同じ commit を使用する。
 
-現在の成果は Phase 3 Backend/helper のコードと Mock／故障試験。
-実 USB/IP、Orange Pi arm64、実 runtime linking、時刻同期、LLFA 融合は未検証。
+現在の成果は Phase 3 Backend/helper と Phase 4 ClockSync／時刻 API のコードと Mock／故障試験。
+実 USB/IP、Orange Pi arm64、現行 Phase 4 API の runtime linking、実機での時刻同期精度、LLFA 融合は未検証。
 現 PC にだけ `28de:2300` Tracker があり、本番 Pi はまだ使っていない。
 Phase 3 の実機合格条件は後述の証拠が揃うまで未達として扱う。
 BSB 対応は追加しない。
@@ -16,6 +16,32 @@ BSB 対応は追加しない。
 最初にこのプロジェクトと Bridge の AGENTS.md、Bridge README、
 `docs/USBIP-BACKEND.md`、`docs/FFI-ABI.md`、`docs/PROTOCOL.md` を読む。
 ここに挙げる新しい runtime 設定／adapter は実装対象であり、既存関数として扱わない。
+
+## Phase 4 更新の引き継ぎ
+
+両担当の Phase 3 組み込み報告を受け、Bridge に live timing API を追加した。
+**両 submodule を本書を含む同じ新 commit に更新する。wire v3 と旧 v2 は接続互換がない。**
+既存 C ABI layout／UDS はv1を維持。既存build/runtime opt-in、IPCパス、停止・新子プロセス契約は維持する。
+`docs/PHASE-4-TIMING-SPEC.md` と生成ヘッダを読み、追加sensor timestampを前提にしない。
+
+両側で start 前に `llb_configure_timing` を成功させる。tracked_device_id／source_clock_id／local_clock_id と
+quality limits を共有し、CLOCK_MONOTONIC ns の domain を実環境で確認する。
+数値IDはsession内の契約。Mockの固定device=1/clock=1への合わせ込みで実poseを通さない。
+Host/Pi の時計 epoch は別。poll/heartbeat を継続し、USB準備中もClockSyncに応答する。
+
+Monado の未コミット `target_llfa_bridge.cpp`／`doc/arpara-light-bridge.md` は前版APIの状態なので再確認する。
+
+1. production factory が kernel backend に加えて live timing を設定する。Mock clock はtest factoryだけ。
+2. callbackでraw Poseをコピー。poll復帰後に `llb_get_reference_timing` を取得し session/sequence を照合。
+   sinkに raw timestamp／semantics、mapped sample timestamp、receive timestamp、uncertainty／generation を保存する。
+3. `llb_get_clock_status` と `llb_get_pose_diagnostics` をpollし、同期未成立／期限切れ／clock fault／tracking lostでsinkを無効化する。
+   callback内のFFI再入は禁止。mappingのないraw timestampをMonado sample時刻として比較しない。
+4. driver-reported timestampはestimatedとして扱う。追加sensor時刻取得は不要。
+   source relationが既にdriver-from-head／world／chaperone変換を含むことをWiVRn担当と確認し、mountを二重適用しない。
+5. HEADは既存arpara IMUを維持する。mapped referenceの受信確認、mount/origin較正、LLFA融合の成功は別々に報告する。
+
+提出証拠にClockSync status／RTT／drift／uncertainty、raw↔mapped timestamp、session/sequence、
+失効／clock reset／tracking lossの無効化と新session復帰を追加。実時計精度をMockテストから推測しない。
 
 ## 合意済みの IPC・有効化・再接続契約（2026-10-11 追記）
 
@@ -56,7 +82,7 @@ Monado checkout: `/home/reina/monado`、調査 HEAD `ad7610a5561325a9b368cda5d45
 - `src/xrt/targets/common/target_builder_llfa.c:82`: arpara HMD 初期化。
 - 同 `:102`: `survive_get_tracker_devices` によるローカル Tracker open。
 - `src/xrt/targets/common/target_llfa.c:87`: `multi_create_tracking_override` の DIRECT override。
-- `src/xrt/targets/common/target_llfa.h`: 既存 helper API。Bridge external-reference sink はまだない。
+- `src/xrt/targets/common/target_llfa.h`: 既存 helper API。Phase 3開始時はBridge sinkが未存在。現在の未コミットadapterはreference mailboxを持つ。
 - `src/xrt/drivers/arpara/arpara_hmd.cpp`: 独立した HID reader／IMU 3DoF／shutdown join。
 - mount の契約は既存 `doc/arpara-llfa-link.md` と Bridge `docs/INTEGRATION-NOTES.md` を再確認する。
 
@@ -78,7 +104,7 @@ DIRECT override は IMU/Lighthouse 融合の完成ではない。既存 reader �
 
 ## C ABI の具体的な接続
 
-生成ヘッダ `light_bridge.h` の実シグネチャを正とする。ABI version=1、Bridge wire version=2。
+生成ヘッダ `light_bridge.h` の実シグネチャを正とする。ABI version=1、Bridge wire version=3。
 
 - `llb_create`: role=`LLB_HMD`、callback/userdata、timeout_ms（USB 初期化待機でも heartbeat を回せる値）。
 - `llb_configure_kernel_usbip`: TCP 接続前に1回。socket UTF-8 byte buffer、runtime policy JSON buffer、各長さ、非零 instance ID。
@@ -110,10 +136,10 @@ PC で観測した busid `1-3.3`／sysfs path を Pi の固定値にコピーし
 `2c30:1050` は allowlist に載せても拒否。WholeDevice 以外へ対象を読み替えない。
 
 参照 sink を新設し、session/device/origin/frame/clock/timestamp semantics/flags を保存する。
-現在は `llb_mock_clock` による synthetic mapping しかなく、実時刻同期の実装ではない。
+Phase 4 の `llb_configure_timing` で live ClockSync を選択する。`llb_mock_clock` は fixture 専用。
 時計・origin・mount が検証されるまでは head pose valid／融合成功に昇格しない。
 mount が T_HMD_Tracker のとき world head = world tracker × inverse(T_HMD_Tracker)。
-既存較正の方向を実ソースで再確認する。Phase 4 の実時計／融合は別の明示作業として報告する。
+既存較正の方向を実ソースで再確認する。時計同期 API の実 runtime 組み込み・精度確認と較正／融合は別々に報告する。
 
 ## ビルドと合格条件
 

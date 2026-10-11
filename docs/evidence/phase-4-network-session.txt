@@ -1,0 +1,8 @@
+   Compiling light-bridge-hmd v0.1.0 (/home/reina/LLFA-Link-Light-Bridge/crates/light-bridge-hmd)
+   Compiling network-session v0.1.0 (/home/reina/LLFA-Link-Light-Bridge/tools/network-session)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running `target/debug/network-session --processes`
+POSE reference=[1,2,3] head_valid=false
+HMD resources=0
+HOST resources=0
+Separate processes: WiVRn Client IPC -> HMD TCP -> Host prepare/attach -> Monado reference -> stop: OK (Mock USB/runtime)

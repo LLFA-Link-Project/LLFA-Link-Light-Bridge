@@ -9,9 +9,41 @@ Bridge を別の主動作 daemon に移さない。特権 helper／標準 usbipd
 BSB は追加しない。
 
 本書を含む Bridge commit を記録し、Monado 担当と同じ commit を使う。
-現在は PC の Tracker のみ。Phase 3 の code／Mock／故障試験はあるが、実転送・Orange Pi・runtime linking は未検証。
+現在は PC の Tracker のみ。Phase 3 と Phase 4 ClockSync の code／Mock／故障試験はあるが、実転送・Orange Pi・現行 API の runtime linking は未検証。
 実機成功や Phase 3 合格は、後述の観測が揃うまで主張しない。
 最初に両 repository の AGENTS.md、Bridge README、`docs/USBIP-BACKEND.md`、`docs/FFI-ABI.md`、`docs/PROTOCOL.md` を読む。
+
+## Phase 4 更新の引き継ぎ
+
+両担当の Phase 3 組み込み報告を受け、Bridge に live timing API を追加した。
+**両 submodule を本書を含む同じ新 commit に更新する。wire v3 と旧 v2 は接続互換がない。**
+既存 C ABI layout／UDS はv1を維持。既存build/runtime opt-in、IPCパス、停止・新子プロセス契約は維持する。
+`docs/PHASE-4-TIMING-SPEC.md` と生成ヘッダを読み、追加sensor timestampを前提にしない。
+
+両側で start 前に `llb_configure_timing` を成功させる。tracked_device_id／source_clock_id／local_clock_id と
+quality limits を共有し、CLOCK_MONOTONIC ns の domain を実環境で確認する。
+数値IDはsession内の契約。Mockの固定device=1/clock=1への合わせ込みで実poseを通さない。
+Host/Pi の時計 epoch は別。poll/heartbeat を継続し、USB準備中もClockSyncに応答する。
+
+調査HEAD `4cf2c7819e3e418f8ec29b38ea741f2ac7c6c1bb` の `server/light_bridge_host.cpp` は
+`publish_reference` を持つが、実Lighthouse sourceとはまだ接続されていない。
+実sourceは `build-dashboard/_deps/monado-src/src/xrt/drivers/steamvr_lh/device.cpp` の
+get_latest_pose(:824)／history push(:1279) を調査済み。ビルド生成treeの変更はpatch sourceへ反映する。
+
+1. Host factoryで live TimingConfig を設定する。pollがClockRequestに応答する。
+2. 選択serialの `steamvr_lh_get_latest_pose` からrelationとtimestampを対で取得し、
+   **raw history timestampをそのまま sample_timestamp_ns** に入れる。新しいhistory timestampだけをpublishする。
+   `get_tracked_pose(query_time)`の予測値をraw driver sampleと混同しない。
+3. semantics=1 estimated（driver-reported）、source clock ID／device ID／origin/frame を契約どおり設定。
+   source clock uncertaintyの根拠を記録。確認済みHost monotonic nsのinteger原値をコピーする場合は、
+   追加clock変換誤差なしとして0を使える（センサーの物理誤差0の主張ではない）。
+   clock domain／変換誤差が未確定なら最大値。timestampを送信時刻に置換しない。
+4. relation flags／velocity validityをDTOへ写し、tracking lossもHMDがreferenceを無効化できるよう配信する。
+   world／chaperone／driver-from-head適用済みのframeをMonado担当へ通知し、追加mountの二重適用を避ける。
+5. source publisherのworker／借用deviceをdriver解放前に停止・joinする。既存release→detachの順序は維持する。
+
+提出証拠にraw driver history timestamp、poseTimeOffsetの取り扱い、clock-domain bracket確認、
+raw→publish→mapped→sinkのsession/sequenceログを追加。USB転送／姿勢受信／融合を別々に報告する。
 
 ## 合意済みの IPC・有効化・再接続契約（2026-10-11 追記）
 
@@ -59,7 +91,9 @@ checkout が変わっていれば位置／lifetime を再調査する。
 - `server/driver/wivrn_connection.cpp`／`server/ipc_server_cb.cpp` と `server/main.cpp` を lifetime/広告経路の追加調査対象にする。
   main は runtime child を fork する構成がある。Rust worker を親で開始してから fork しない。
 
-新しい Bridge port/host/correlation 広告契約は未実装。WiVRn stream_port を Bridge port として流用しない。
+上記はPhase 3開始時点の調査。現HEAD `4cf2c781` は `to_headset::light_bridge_endpoint` と
+早期広告／Client通知を実装済み（`docs/light-bridge.md` と実コードで確認）。
+Phase 4では既存の広告互換性を維持し、WiVRn stream_port を Bridge port として流用しない。
 既存最新履歴 timestamp を、測定済みの光学サンプル時刻と断定しない。
 
 ## Server の作業順序
@@ -87,7 +121,7 @@ real backend の Drop は強制 detach しない。残留は journal と OS 状�
 
 ## C ABI の接続
 
-生成ヘッダ `light_bridge.h` が実シグネチャ。ABI version=1、Bridge wire version=2。
+生成ヘッダ `light_bridge.h` が実シグネチャ。ABI version=1、Bridge wire version=3。
 
 - `llb_create`: role Host、callback は必要に応じ state のみ、timeout は USB worker 待機を考慮する。
 - `llb_configure_kernel_usbip`: TCP setup 前に1回。root import helper の socket、runtime policy JSON、各 byte length、非零 instance ID。
@@ -128,7 +162,7 @@ Client notification に helper root 権限を与えない。UDS listener は Mon
 Phase 3 の実証はまず USB transfer／Tracker driver 検出／release/cleanup。
 `llb_publish_pose` の DTO は session/device/origin/frame/clock/semantics/valid flags を保持する。
 実 source timestamp の意味、origin、clock mapping を確定せず、latest history timestamp を measured として送らない。
-`llb_mock_clock` は synthetic fixture 専用。実時刻同期／Monado LLFA 融合は Phase 4 の別作業。
+`llb_mock_clock` は synthetic fixture 専用。現行 Phase 4 の live 時刻 API を組み込み、実同期精度と Monado LLFA 融合を別々に検証する。
 Mock timestamped pose による runtime adapter 縦断は継続し、実 pose／融合成功とは分けて報告する。
 
 CMake からの build 例:

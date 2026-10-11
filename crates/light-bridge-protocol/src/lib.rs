@@ -5,7 +5,7 @@ pub mod network;
 use light_bridge_core::{Error, ExternalPose, Result, VERSION};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::time::Duration;
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 pub const MAX_FRAME: usize = 1024;
 pub const QUEUE_CAPACITY: usize = 16;
 #[repr(u32)]
@@ -21,6 +21,8 @@ pub enum Kind {
     Heartbeat = 8,
     StopRequest = 9,
     Pose = 10,
+    ClockRequest = 11,
+    ClockReply = 12,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Message {
@@ -29,6 +31,7 @@ pub struct Message {
     pub operation_id: u64,
     pub pose: Option<ExternalPose>,
     pub device: Option<light_bridge_usbip::UsbDeviceIdentity>,
+    pub clock: Option<light_bridge_core::clock::Exchange>,
 }
 impl Message {
     pub fn control(kind: Kind, session_id: u64, operation_id: u64) -> Self {
@@ -38,6 +41,7 @@ impl Message {
             operation_id,
             pose: None,
             device: None,
+            clock: None,
         }
     }
     pub fn encode(&self) -> Result<Vec<u8>> {
@@ -45,6 +49,7 @@ impl Message {
             || self.operation_id == 0
             || (self.kind == Kind::Pose) != self.pose.is_some()
             || (self.kind == Kind::UsbExportReady) != self.device.is_some()
+            || matches!(self.kind, Kind::ClockRequest | Kind::ClockReply) != self.clock.is_some()
         {
             return Err(Error::Protocol);
         }
@@ -88,6 +93,25 @@ impl Message {
         if let Some(device) = &self.device {
             b.extend(serde_json::to_vec(device).map_err(|_| Error::Protocol)?);
         }
+        if let Some(x) = self.clock {
+            if x.source_clock_id == 0
+                || x.local_clock_id == 0
+                || x.t1 < 0
+                || (self.kind == Kind::ClockRequest && (x.t2 != 0 || x.t3 != 0))
+                || (self.kind == Kind::ClockReply && (x.t2 < 0 || x.t3 < x.t2))
+            {
+                return Err(Error::Protocol);
+            }
+            for v in [
+                x.source_clock_id,
+                x.local_clock_id,
+                x.t1 as u64,
+                x.t2 as u64,
+                x.t3 as u64,
+            ] {
+                b.extend_from_slice(&v.to_be_bytes());
+            }
+        }
         if b.len() + 4 > MAX_FRAME {
             return Err(Error::Protocol);
         }
@@ -120,6 +144,8 @@ impl Message {
             8 => Kind::Heartbeat,
             9 => Kind::StopRequest,
             10 => Kind::Pose,
+            11 => Kind::ClockRequest,
+            12 => Kind::ClockReply,
             _ => return Err(Error::Protocol),
         };
         let session_id = r.u64()?;
@@ -156,16 +182,30 @@ impl Message {
         } else {
             None
         };
+        let clock = if matches!(kind, Kind::ClockRequest | Kind::ClockReply) {
+            Some(light_bridge_core::clock::Exchange {
+                source_clock_id: r.u64()?,
+                local_clock_id: r.u64()?,
+                t1: r.u64()? as i64,
+                t2: r.u64()? as i64,
+                t3: r.u64()? as i64,
+            })
+        } else {
+            None
+        };
         if r.pos != frame.len() {
             return Err(Error::Protocol);
         }
-        Ok(Self {
+        let message = Self {
             kind,
             session_id,
             operation_id,
             pose,
             device,
-        })
+            clock,
+        };
+        message.encode()?;
+        Ok(message)
     }
 }
 struct Reader<'a> {
@@ -242,6 +282,26 @@ impl Transport {
                 operation_id: 3,
                 pose: None,
                 device: Some(device),
+                clock: None,
+            },
+        )
+    }
+    pub fn clock(
+        &self,
+        kind: Kind,
+        session: u64,
+        request: u64,
+        exchange: light_bridge_core::clock::Exchange,
+    ) -> Result<()> {
+        send(
+            &self.control_tx,
+            &Message {
+                kind,
+                session_id: session,
+                operation_id: request,
+                pose: None,
+                device: None,
+                clock: Some(exchange),
             },
         )
     }
@@ -268,6 +328,7 @@ impl Transport {
                 operation_id: p.sequence,
                 pose: Some(p),
                 device: None,
+                clock: None,
             },
         )
     }
@@ -314,6 +375,7 @@ mod tests {
             operation_id: 1,
             pose: Some(ExternalPose::mock(1, 1, 42)),
             device: None,
+            clock: None,
         };
         let b = m.encode().unwrap();
         assert_eq!(Message::decode(&b).unwrap(), m);
@@ -321,7 +383,7 @@ mod tests {
             assert!(Message::decode(&b[..n]).is_err());
         }
         let mut v = b.clone();
-        v[11] = 3;
+        v[11] = 4;
         assert!(Message::decode(&v).is_err());
         let mut v = b.clone();
         v.push(0);
@@ -329,6 +391,39 @@ mod tests {
         let mut v = b;
         v[15] = 255;
         assert!(Message::decode(&v).is_err());
+    }
+    #[test]
+    fn clock_frames_are_bounded_strict_and_separate_from_pose() {
+        let x = light_bridge_core::clock::Exchange {
+            source_clock_id: 22,
+            local_clock_id: 33,
+            t1: 100,
+            t2: 200,
+            t3: 210,
+        };
+        let m = Message {
+            kind: Kind::ClockReply,
+            session_id: 1,
+            operation_id: 98,
+            pose: None,
+            device: None,
+            clock: Some(x),
+        };
+        let b = m.encode().unwrap();
+        assert_eq!(b.len(), 72);
+        assert_eq!(Message::decode(&b).unwrap(), m);
+        for n in 0..b.len() {
+            assert!(Message::decode(&b[..n]).is_err());
+        }
+        let mut v = b.clone();
+        v.push(0);
+        assert!(Message::decode(&v).is_err());
+        let mut v = b;
+        v[11] = 2;
+        assert!(Message::decode(&v).is_err());
+        let mut request = m;
+        request.kind = Kind::ClockRequest;
+        assert!(request.encode().is_err());
     }
     #[test]
     fn bounded_transport_timeout_disconnect() {

@@ -247,6 +247,7 @@ mod tests {
             operation_id: 1,
             pose: Some(ExternalPose::mock(1, 1, 42)),
             device: None,
+            clock: None,
         }
         .encode()
         .unwrap();

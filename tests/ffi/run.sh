@@ -15,3 +15,9 @@ target/debug/ffi-network-smoke
 cc -std=c11 -Wall -Wextra -Werror -I "$LLB_HEADER_DIR" tests/ffi/network-smoke.c \
  target/debug/liblight_bridge_ffi.a -lpthread -ldl -lm -o target/debug/ffi-static-network-smoke
 target/debug/ffi-static-network-smoke
+cc -std=c11 -Wall -Wextra -Werror -I "$LLB_HEADER_DIR" tests/ffi/clock-smoke.c \
+ -L target/debug -llight_bridge_ffi -Wl,-rpath,"$PWD/target/debug" -o target/debug/ffi-clock-smoke
+target/debug/ffi-clock-smoke
+cc -std=c11 -Wall -Wextra -Werror -I "$LLB_HEADER_DIR" tests/ffi/clock-smoke.c \
+ target/debug/liblight_bridge_ffi.a -lpthread -ldl -lm -o target/debug/ffi-static-clock-smoke
+target/debug/ffi-static-clock-smoke

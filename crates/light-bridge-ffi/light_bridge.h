@@ -30,6 +30,52 @@ typedef struct LlbHandle LlbHandle;
 typedef struct {
   uint32_t size;
   uint32_t abi_version;
+  uint64_t tracked_device_id;
+  uint64_t source_clock_id;
+  uint64_t local_clock_id;
+  int64_t max_age_ns;
+  int64_t future_tolerance_ns;
+  uint64_t max_uncertainty_ns;
+  int64_t sync_interval_ns;
+  int64_t request_timeout_ns;
+  int64_t mapping_validity_ns;
+  /**
+   * Assumed bound on relative frequency error, parts per billion. Not a measured hardware guarantee.
+   */
+  uint64_t max_drift_ppb;
+} LlbTimingConfig;
+
+typedef struct {
+  uint32_t size;
+  uint32_t abi_version;
+  uint32_t synchronized;
+  uint32_t sample_count;
+  uint64_t source_clock_id;
+  uint64_t local_clock_id;
+  uint64_t generation;
+  int64_t source_anchor_ns;
+  int64_t local_anchor_ns;
+  int64_t drift_ppb;
+  uint64_t rtt_ns;
+  uint64_t uncertainty_ns;
+  int64_t valid_until_ns;
+} LlbClockStatus;
+
+typedef struct {
+  uint32_t size;
+  uint32_t abi_version;
+  uint64_t session_id;
+  uint64_t sequence;
+  uint64_t local_clock_id;
+  uint64_t mapping_generation;
+  int64_t local_sample_timestamp_ns;
+  int64_t local_receive_timestamp_ns;
+  uint64_t total_uncertainty_ns;
+} LlbReferenceTiming;
+
+typedef struct {
+  uint32_t size;
+  uint32_t abi_version;
   uint64_t session_id;
   uint64_t sequence;
   uint64_t tracked_device_id;
@@ -75,6 +121,34 @@ typedef struct {
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+/**
+ * Configure CLOCK_MONOTONIC and explicit pose policy before start. Does not enable Bridge or USB.
+ */
+int32_t llb_configure_timing(LlbHandle *handle, const LlbTimingConfig *config);
+
+/**
+ * Linux CLOCK_MONOTONIC nanoseconds, same domain used by live ClockSync. No wall clock.
+ */
+int32_t llb_monotonic_time_ns(int64_t *out);
+
+/**
+ * HMD only. Caller initializes output size/abi_version. Unsynchronized is a successful status result.
+ */
+int32_t llb_get_clock_status(LlbHandle *handle,
+                             LlbClockStatus *out);
+
+/**
+ * Timing of the last callback-delivered reference. Query AFTER poll, never reenter a callback.
+ * Match session/sequence to the copied raw pose. Does not alter its original timestamp or semantics.
+ */
+int32_t llb_get_reference_timing(LlbHandle *handle,
+                                 LlbReferenceTiming *out);
+
+/**
+ * HMD rejection diagnostics: 0 last accepted, 1 clock/inactive, 2 pose policy, 3 malformed.
+ */
+int32_t llb_get_pose_diagnostics(LlbHandle *handle, uint64_t *rejected, uint32_t *reason);
 
 /**
  * Configure exact runtime policy before TCP setup. No privileged action at this point.

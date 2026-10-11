@@ -28,3 +28,7 @@ Callback = "LlbCallback"
 Config = "LlbConfig"
 Endpoint = "LlbEndpoint"
 Handle = "LlbHandle"
+
+TimingConfig = "LlbTimingConfig"
+ClockStatus = "LlbClockStatus"
+ReferenceTiming = "LlbReferenceTiming"

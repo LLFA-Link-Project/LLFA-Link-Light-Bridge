@@ -1,4 +1,5 @@
 //! Session and tracking data shared by the two in-process libraries.
+pub mod clock;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 

@@ -3,6 +3,7 @@
 //! All non-null pointers must be valid, aligned and point to the documented live objects.
 //! Userdata outlives the handle; callbacks borrow pose for the duration of the call only.
 #![allow(clippy::missing_safety_doc)]
+use light_bridge_core::clock::{monotonic_ns, ClockStatus, ReferenceTiming, TimingConfig};
 use light_bridge_core::*;
 use light_bridge_hmd::HmdClient;
 use light_bridge_host::HostServer;
@@ -53,6 +54,7 @@ pub struct Handle {
     library: Library,
     listener: Option<(std::net::TcpListener, EndpointInfo)>,
     peer_host: Option<u64>,
+    timing: Option<TimingConfig>,
     #[cfg(target_os = "linux")]
     kernel: Option<(String, light_bridge_usbip::kernel::Policy, u64)>,
 }
@@ -67,7 +69,25 @@ fn kernel_configured(h: &Handle) -> bool {
         false
     }
 }
+fn apply_timing(library: &mut Library, config: Option<TimingConfig>) -> Result<()> {
+    if let Some(c) = config {
+        match library {
+            Library::Hmd(v) => v.configure_timing(c)?,
+            Library::Host(v) => v.configure_timing(c)?,
+            _ => return Err(Error::InvalidState),
+        }
+    }
+    Ok(())
+}
 fn connected_library(h: &Handle, transport: light_bridge_protocol::Transport) -> Result<Library> {
+    let mut library = make_connected_library(h, transport)?;
+    apply_timing(&mut library, h.timing)?;
+    Ok(library)
+}
+fn make_connected_library(
+    h: &Handle,
+    transport: light_bridge_protocol::Transport,
+) -> Result<Library> {
     #[cfg(target_os = "linux")]
     if let Some((socket, policy, instance)) = &h.kernel {
         let backend = Box::new(light_bridge_usbip::helper::KernelUsbIp::new(
@@ -95,6 +115,109 @@ fn connected_library(h: &Handle, transport: light_bridge_protocol::Transport) ->
             Arc::new(Mutex::new(MockUsbIp::ready())),
             h.timeout,
         ))
+    })
+}
+/// Configure CLOCK_MONOTONIC and explicit pose policy before start. Does not enable Bridge or USB.
+#[no_mangle]
+pub unsafe extern "C" fn llb_configure_timing(
+    handle: *mut Handle,
+    config: *const TimingConfig,
+) -> i32 {
+    guard(|| {
+        let h = handle.as_mut().ok_or(Error::InvalidArgument)?;
+        if config.is_null()
+            || config.cast::<u32>().read() != std::mem::size_of::<TimingConfig>() as u32
+            || config.cast::<u32>().add(1).read() != VERSION
+        {
+            return Err(Error::InvalidArgument);
+        }
+        let c = *config;
+        c.validate()?;
+        monotonic_ns()?;
+        if h.state() != State::Idle {
+            return Err(Error::InvalidState);
+        }
+        if !matches!(h.library, Library::Unlinked) {
+            apply_timing(&mut h.library, Some(c))?;
+        }
+        h.timing = Some(c);
+        Ok(())
+    })
+}
+/// Linux CLOCK_MONOTONIC nanoseconds, same domain used by live ClockSync. No wall clock.
+#[no_mangle]
+pub unsafe extern "C" fn llb_monotonic_time_ns(out: *mut i64) -> i32 {
+    guard(|| {
+        if out.is_null() {
+            return Err(Error::InvalidArgument);
+        }
+        *out = monotonic_ns()?;
+        Ok(())
+    })
+}
+/// HMD only. Caller initializes output size/abi_version. Unsynchronized is a successful status result.
+#[no_mangle]
+pub unsafe extern "C" fn llb_get_clock_status(handle: *mut Handle, out: *mut ClockStatus) -> i32 {
+    guard(|| {
+        let h = handle.as_mut().ok_or(Error::InvalidArgument)?;
+        if out.is_null()
+            || out.cast::<u32>().read() != std::mem::size_of::<ClockStatus>() as u32
+            || out.cast::<u32>().add(1).read() != VERSION
+        {
+            return Err(Error::InvalidArgument);
+        }
+        match &h.library {
+            Library::Hmd(v) => {
+                *out = v.clock_status()?;
+                Ok(())
+            }
+            _ => Err(Error::InvalidState),
+        }
+    })
+}
+/// Timing of the last callback-delivered reference. Query AFTER poll, never reenter a callback.
+/// Match session/sequence to the copied raw pose. Does not alter its original timestamp or semantics.
+#[no_mangle]
+pub unsafe extern "C" fn llb_get_reference_timing(
+    handle: *mut Handle,
+    out: *mut ReferenceTiming,
+) -> i32 {
+    guard(|| {
+        let h = handle.as_mut().ok_or(Error::InvalidArgument)?;
+        if out.is_null()
+            || out.cast::<u32>().read() != std::mem::size_of::<ReferenceTiming>() as u32
+            || out.cast::<u32>().add(1).read() != VERSION
+        {
+            return Err(Error::InvalidArgument);
+        }
+        match &h.library {
+            Library::Hmd(v) => {
+                *out = v.reference_timing()?;
+                Ok(())
+            }
+            _ => Err(Error::InvalidState),
+        }
+    })
+}
+/// HMD rejection diagnostics: 0 last accepted, 1 clock/inactive, 2 pose policy, 3 malformed.
+#[no_mangle]
+pub unsafe extern "C" fn llb_get_pose_diagnostics(
+    handle: *mut Handle,
+    rejected: *mut u64,
+    reason: *mut u32,
+) -> i32 {
+    guard(|| {
+        let h = handle.as_mut().ok_or(Error::InvalidArgument)?;
+        if rejected.is_null() || reason.is_null() {
+            return Err(Error::InvalidArgument);
+        }
+        match &h.library {
+            Library::Hmd(v) => {
+                (*rejected, *reason) = v.pose_diagnostics();
+                Ok(())
+            }
+            _ => Err(Error::InvalidState),
+        }
     })
 }
 /// Configure exact runtime policy before TCP setup. No privileged action at this point.
@@ -221,6 +344,7 @@ pub unsafe extern "C" fn llb_create(config: *const Config, out: *mut *mut Handle
             library: Library::Unlinked,
             listener: None,
             peer_host: None,
+            timing: None,
             #[cfg(target_os = "linux")]
             kernel: None,
         }));
@@ -250,6 +374,8 @@ pub unsafe extern "C" fn llb_mock_link(hmd: *mut Handle, host: *mut Handle) -> i
         let usb = Arc::new(Mutex::new(MockUsbIp::ready()));
         h.library = Library::Hmd(HmdClient::new(a, usb.clone(), h.timeout));
         s.library = Library::Host(HostServer::new(b, usb, s.timeout));
+        apply_timing(&mut h.library, h.timing)?;
+        apply_timing(&mut s.library, s.timing)?;
         Ok(())
     })
 }

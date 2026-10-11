@@ -1,4 +1,4 @@
-# Bridge protocol v2
+# Bridge protocol v3
 
 USB/IP や WiVRn の既存プロトコルとは独立。in-memory と TCP の双方で同じ frame を使用。
 フレームは big endian。Rust／C のメモリをそのままネットワークへ送らない。
@@ -7,7 +7,7 @@ USB/IP や WiVRn の既存プロトコルとは独立。in-memory と TCP の双
 |---|---|---|
 | 0 | 4 | payload length (prefix 自体を含まない) |
 | 4 | 4 | magic `LLFB` |
-| 8 | 4 | version = 2 |
+| 8 | 4 | version = 3 |
 | 12 | 4 | kind |
 | 16 | 8 | session ID (nonzero) |
 | 24 | 8 | operation ID / pose sequence (nonzero) |
@@ -20,11 +20,12 @@ UsbDeviceIdentity JSON を payload に必須とする。未知フィールドを
 将来 version は negotiation を追加するまで fail closed。
 
 kind: Hello=1, Prepare=2, UsbExportReady=3, UsbAttached=4, TrackingReady=5,
-Stop=6, Stopped=7, Heartbeat=8, StopRequest=9, Pose=10。
+Stop=6, Stopped=7, Heartbeat=8, StopRequest=9, Pose=10, ClockRequest=11, ClockReply=12。
 StopRequest は HMD から Host runtime へ release を要求する追加 message。
 UsbExportReady の identity は Host の exact import policy と照合してから attach する。
-汎用 SessionOffer／capabilities negotiation／ClockSync／Error payload は未実装。
-endpoint は下記 UDS 通知に実装。旧 Bridge v1 は拒否する。
+汎用 SessionOffer／capabilities negotiation／Error payload は未実装。
+ClockRequest/Reply は下記 Phase 4 の固定 payload。
+endpoint は下記 UDS 通知に実装。旧 Bridge v1/v2 は拒否する。
 
 Pose payload 順序: tracked_device_id, tracking_origin_id, frame_id, source_clock_id,
 sample_timestamp_ns, clock_uncertainty_ns (各8 bytes)、timestamp_semantics と flags (各4 bytes)、
@@ -55,7 +56,7 @@ control の認証、暗号化、datagram loss、実ネットワーク rate limit
 ## Phase 2 TCP / UDS
 
 TCP listener は単一 Bridge port。接続順序は control、pose の2 socket。
-各 socket の preface は `LLBN` (4) + version=2 (u32) + host_id (u64) + correlation_id (u64)
+各 socket の preface は `LLBN` (4) + version=3 (u32) + host_id (u64) + correlation_id (u64)
 + lane (u8: control=0, pose=1)、計25 bytes、整数は big endian。
 Host は期待した2 lane の preface を確認してから各 socket に ACK byte=1 を返す。
 Host/correlation/lane 不一致は接続設定失敗。相関 ID は認証トークンではない。
@@ -77,3 +78,11 @@ Rust `ipc::send/receive` は渡された stream を nonblocking に設定する�
 TCP は明示選択した Mock／kernel backend を運ぶ。UDS は endpoint 通知のみ。
 WiVRn の認証／既存 port を流用せず、実 WiVRn の Bridge endpoint 広告契約はまだ変更していない。
 USB helper の local credential 認証は Bridge remote TCP の認証にはならない。
+
+## Phase 4 ClockSync
+
+制御 lane の Request=11／Reply=12 は session ID と独立 request counter を持つ。
+payload は source_clock_id、local_clock_id (u64)、t1/t2/t3 (i64 ns)、計40 bytes、frame全体72 bytes。
+request の t2/t3 は0。reply の t1 を outstanding request と照合し、t4 はHMDで採る。
+未知 domain、負の時刻、不正順序／余剰 payload は拒否。同期 frame は lifecycle counter と heartbeat を更新しない。
+採時位置／推定式／期限／再同期は [PHASE-4-TIMING-SPEC.md](PHASE-4-TIMING-SPEC.md) を参照。

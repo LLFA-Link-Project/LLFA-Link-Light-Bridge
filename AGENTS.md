@@ -68,7 +68,7 @@ Dependencies must be cached before offline commands; `cargo fetch --locked` prep
 - Privileged operations go only through the root-owned helper with SO_PEERCRED and exact policy. Keep CLI executable paths and argument forms fixed; never introduce a shell RPC.
 - Persist intent before OS mutation and retain uncertain journals. Never automatically adopt stale resources or infer an owned port from a guessed number. Runtime release, verified Host detach, then HMD unbind remain mandatory.
 - Real backend destroy cancels/joins workers; it does not blindly clean up OS resources. Document residual-resource inspection and incomplete cleanup.
-- Bridge frame/preface version is 2; C ABI and UDS notification version remain 1. Keep identity offer encoding and import policy consistent.
+- Bridge frame/preface version is 3; C ABI and UDS notification version remain 1. Keep identity offer encoding and import policy consistent.
 - Keep `docs/HANDOFF-MONADO.md`, `docs/HANDOFF-WIVRN.md`, and `docs/PHASE-3-REPORT.md` current. Mock/helper engine tests do not establish Phase 3 hardware acceptance.
 
 ## Runtime adapter contract
@@ -76,3 +76,10 @@ Dependencies must be cached before offline commands; `cargo fetch --locked` prep
 - Notification UDS defaults to `/tmp/llfa-llb.sock`; both WiVRn Client and Monado adapter use `WIVRN_LIGHT_BRIDGE_IPC` to override it. Path configuration alone does not enable Bridge; build and runtime both require explicit enablement.
 - The default is in shared `/tmp`: use same-UID peer credentials and socket mode 0600, verify existing path ownership, and never blindly unlink. Custom paths must match on both adapters.
 - WiVRn reconnect after a Bridge disconnect uses a new Server child process and fresh IDs. Release the Lighthouse driver before permitting USB/IP detach; audit old resources before preparing a new child. Do not reuse old tracking devices or start Rust workers before fork.
+
+## Phase 4 driver timing
+
+- Driver-reported history timestamps are the primary reference; do not require additional raw sensor timestamps. Keep original values/semantics and separate mapped/receive times.
+- Read `docs/PHASE-4-TIMING-SPEC.md` before changing clocks. CLOCK_MONOTONIC domain equality must be verified in each runtime environment.
+- ClockSync uses bounded control queues and separate request IDs; it must not advance lifecycle counters or keep heartbeat alive. Preserve uncertainty and invalidate unsynchronized, expired, discontinuous or wrong-domain mappings.
+- New timing APIs do not establish calibration/fusion or hardware acceptance. Update both runtime handoffs and report real versus synthetic source/clock/network/USB separately.

@@ -1,0 +1,8 @@
+   Compiling light-bridge-ffi v0.1.0 (/home/reina/LLFA-Link-Light-Bridge/crates/light-bridge-ffi)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.27s
+C ABI smoke: create/start/prepare/pose/stop/destroy passed
+C ABI smoke: create/start/prepare/pose/stop/destroy passed
+TCP C ABI / independent Mock USB / Monado reference: OK
+TCP C ABI / independent Mock USB / Monado reference: OK
+Live CLOCK_MONOTONIC sync / raw pose + mapped timing / release cleanup: OK (Mock USB)
+Live CLOCK_MONOTONIC sync / raw pose + mapped timing / release cleanup: OK (Mock USB)
