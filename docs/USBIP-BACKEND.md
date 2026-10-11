@@ -1,5 +1,9 @@
 # Phase 3 Linux USB/IP Backend と helper
 
+今後の installer／互換性確認／一時利用の選択は
+[Helper 利用契約](HELPER-DEPLOYMENT-CONTRACT.md) に従う。これらは現時点では未実装。
+以下は現行の手動配備手順であり、互換性 preflight や自動導入があるとは扱わない。
+
 この文書はコードの使用・試験手順。実 USB/IP 転送が検証済みという報告ではない。
 Orange Pi に Tracker、Host に vhci_hcd を配置し、Monado/WiVRn は一般ユーザーで動かす。
 低遅延の pose／IMU 経路は両 runtime 内、特権 helper と標準 usbipd は別プロセス。

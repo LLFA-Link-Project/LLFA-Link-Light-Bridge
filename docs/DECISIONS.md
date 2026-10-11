@@ -1,5 +1,12 @@
 # Phase 1 の実装判断と仕様との差分
 
+## Helper 配備の追加契約（2026-10-12、実装予定）
+
+ユーザー指定により、導入済み helper は互換性一致時だけ利用し、不一致なら Bridge 開始を中断して
+installer による更新を要求する。未導入時だけ installer 導入／管理者承認付き一時利用を選択可能にする。
+USB 操作前の handshake と専用 compatibility ID が必要。現行 RPC version=1 の検査だけでは満たさない。
+詳細と未実装項目は [HELPER-DEPLOYMENT-CONTRACT.md](HELPER-DEPLOYMENT-CONTRACT.md) を参照。
+
 1. **6 crate + headless harness**: 必須の HMD／Host library を維持し、IMU stub と clock DTO は core に置いた。
    BSB 専用 crate／capture 実装は作成しない。
 2. **外部依存なし**: std の bounded mpsc と pose receiver thread を用いる。

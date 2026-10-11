@@ -1,5 +1,12 @@
 # WiVRn 担当 Codex への LLFA Bridge 組み込み指示書
 
+## Helper 配備の追加要求（2026-10-12、未実装）
+
+[Helper 利用契約](HELPER-DEPLOYMENT-CONTRACT.md) を次の導入設計に適用する。
+導入済み互換 helper を利用、不一致なら開始中断と更新要求、未導入だけ installer／一時管理者利用の選択。
+Dashboard／launcher が選択と診断を扱い、Server の pose 経路で対話や管理者コマンドを実行しない。
+SDK 側 handshake と配備機能の追加が前提。現行 RPC v1 検査だけで互換性確認済みと扱わない。
+
 ## 目的と前提
 
 `LLFA-Link-Light-Bridge-IMPLEMENTATION-INSTRUCTIONS-v0.3.1.md` に沿って、
