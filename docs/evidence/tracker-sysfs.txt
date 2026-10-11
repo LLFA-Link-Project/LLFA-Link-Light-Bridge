@@ -1,0 +1,31 @@
+busid=1-3.2
+sysfs_path=/sys/devices/pci0000:00/0000:00:01.2/0000:01:00.0/usb1/1-3/1-3.2
+idVendor=28de
+idProduct=2101
+serial=FFFFFFFFFF
+product=Watchman Dongle
+bNumInterfaces=1
+devpath=3.2
+interface=1-3.2:1.0 driver=/sys/bus/usb/drivers/usbhid
+
+busid=1-3.3
+sysfs_path=/sys/devices/pci0000:00/0000:00:01.2/0000:01:00.0/usb1/1-3/1-3.3
+idVendor=28de
+idProduct=2300
+serial=LHR-CEC1027F
+product=Tundra Tracker
+bNumInterfaces=3
+devpath=3.3
+interface=1-3.3:1.0 driver=/sys/bus/usb/drivers/usbhid
+interface=1-3.3:1.1 driver=/sys/bus/usb/drivers/usbhid
+interface=1-3.3:1.2 driver=/sys/bus/usb/drivers/usbhid
+
+busid=1-3.4
+sysfs_path=/sys/devices/pci0000:00/0000:00:01.2/0000:01:00.0/usb1/1-3/1-3.4
+idVendor=28de
+idProduct=2101
+serial=C674F2B8AF
+product=Watchman Dongle
+bNumInterfaces=1
+devpath=3.4
+interface=1-3.4:1.0 driver=/sys/bus/usb/drivers/usbhid

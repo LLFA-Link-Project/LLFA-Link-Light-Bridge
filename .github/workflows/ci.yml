@@ -1,0 +1,16 @@
+name: Rust and C ABI
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fetch --locked
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+      - run: cargo test --workspace --locked --offline
+      - run: bash tests/ffi/run.sh
+      - run: cargo run -p mock-session --offline

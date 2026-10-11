@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["crates/*", "tools/mock-session"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+light-bridge-core = { path = "crates/light-bridge-core" }
+light-bridge-protocol = { path = "crates/light-bridge-protocol" }
+light-bridge-usbip = { path = "crates/light-bridge-usbip" }
+light-bridge-hmd = { path = "crates/light-bridge-hmd" }
+light-bridge-host = { path = "crates/light-bridge-host" }

@@ -1,0 +1,12 @@
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 001 Device 002: ID 05e3:0610 Genesys Logic, Inc. Hub
+Bus 001 Device 003: ID 26ce:01a2 ASRock LED Controller
+Bus 001 Device 004: ID 0461:4d15 Primax Electronics, Ltd Dell Optical Mouse
+Bus 001 Device 005: ID 2516:0051 Cooler Master Co., Ltd. AMD SR4 lamplight Control
+Bus 001 Device 006: ID 1a40:0101 Terminus Technology Inc. Hub
+Bus 001 Device 007: ID 28de:2101 Valve Software Watchman Dongle
+Bus 001 Device 008: ID 28de:2101 Valve Software Watchman Dongle
+Bus 001 Device 009: ID 28de:2300 Valve Software Tundra Tracker
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+Bus 004 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub

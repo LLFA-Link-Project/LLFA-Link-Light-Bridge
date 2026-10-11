@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+export LLB_HEADER_DIR="$PWD/target/ffi-include"
+cargo build -p light-bridge-ffi --locked --offline
+cc -std=c11 -Wall -Wextra -Werror -I "$LLB_HEADER_DIR" tests/ffi/smoke.c \
+ -L target/debug -llight_bridge_ffi -Wl,-rpath,"$PWD/target/debug" -o target/debug/ffi-smoke
+target/debug/ffi-smoke
+cc -std=c11 -Wall -Wextra -Werror -I "$LLB_HEADER_DIR" tests/ffi/smoke.c \
+ target/debug/liblight_bridge_ffi.a -lpthread -ldl -lm -o target/debug/ffi-static-smoke
+target/debug/ffi-static-smoke

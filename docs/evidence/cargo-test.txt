@@ -1,0 +1,119 @@
+   Compiling light-bridge-ffi v0.1.0 (/home/reina/LLFA-Link-Light-Bridge/crates/light-bridge-ffi)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/lib.rs (target/debug/deps/light_bridge_core-972461b4d962af2e)
+
+running 4 tests
+test tests::bsb_stub ... ok
+test tests::deadline_and_cancel ... ok
+test tests::pose_rejects ... ok
+test tests::session_order_and_duplicates ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/light_bridge_ffi-592bcd18fd4637bd)
+
+running 2 tests
+test tests::invalid_version_and_owning_slot ... ok
+test tests::abi_layout_and_panic_barrier ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/header.rs (target/debug/deps/header-5c7eea455c267612)
+
+running 1 test
+test generated_header_matches_checked_in_abi ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/light_bridge_hmd-8621f5cbe43a4578)
+
+running 3 tests
+test tests::duplicate_control_and_stop_ack ... ok
+test tests::disconnect_invalidates_buffer_and_joins_worker ... ok
+test tests::worker_rejects_old_session_stale_lost_uncertain_and_origin_change ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/light_bridge_host-236000b891eac9cb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/light_bridge_protocol-63a2bed9228be44d)
+
+running 2 tests
+test tests::codec_and_malformed_frames ... ok
+test tests::bounded_transport_timeout_disconnect ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/light_bridge_usbip-313e3752258f1e97)
+
+running 2 tests
+test tests::ownership_failures_cleanup ... ok
+test tests::selection_and_granularity ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/mock_session-d60d29af903d7a95)
+
+running 8 tests
+test tests::attach_failure_and_cleanup ... ok
+test tests::disconnected_peer ... ok
+test tests::active_drop_cleans_mock_ledger_in_both_orders ... ok
+test tests::timeout_and_destroy_worker ... ok
+test tests::hmd_cancel_requires_runtime_release ... ok
+test tests::enumeration_failure_and_export_failure ... ok
+test tests::host_to_hmd_monado_mock_reference_and_reconnect ... ok
+test tests::heartbeat_loss_can_still_complete_ordered_cleanup ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running unittests src/main.rs (target/debug/deps/mock_session-42d7c535eb322ba3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests light_bridge_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests light_bridge_ffi
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests light_bridge_hmd
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests light_bridge_host
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests light_bridge_protocol
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests light_bridge_usbip
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests mock_session
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
