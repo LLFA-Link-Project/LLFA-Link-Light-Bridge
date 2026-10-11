@@ -17,6 +17,37 @@ BSB 対応は追加しない。
 `docs/USBIP-BACKEND.md`、`docs/FFI-ABI.md`、`docs/PROTOCOL.md` を読む。
 ここに挙げる新しい runtime 設定／adapter は実装対象であり、既存関数として扱わない。
 
+## 合意済みの IPC・有効化・再接続契約（2026-10-11 追記）
+
+- Start/Stop 通知 UDS の既定パスは `/tmp/llfa-llb.sock`。
+  環境変数 `WIVRN_LIGHT_BRIDGE_IPC` で変更可能にし、WiVRn Client と Monado adapter の両方が
+  同じ変数名・同じ既定値を使う。変更時は両プロセスに同じパスを設定する。
+  未設定時は既定値、空文字や不正なパスは設定エラーとして扱う。
+  この設定は通知 UDS 用であり、root USB/IP helper の socket パスとは別。
+- Bridge はビルド・実行時とも明示的に有効化する。環境変数で UDS パスを指定しただけでは有効化しない。
+  無効時は従来の接続経路と tracking 初期化を維持する。
+- 停止順序は Lighthouse ドライバの解放 → USB/IP detach 許可 → Host detach 完了 → HMD unexport。
+  ユーザーから WiVRn 側でこの順序を実装したとの報告を受けた。組み込み先の実コードとログで確認し、
+  本 repository の Mock 成功と実 runtime の検証結果を区別する。
+- Bridge 使用時の切断後の再接続は **新しい WiVRn Server 子プロセス**で行う。
+  古い tracking device／USB handle／Bridge handle を再利用しない。
+  旧子プロセスの driver release／detach と journal の状態を確認してから新規準備を行う。
+  不確定 cleanup は既存の手動照合手順に従い、子プロセスの終了だけで資源解放済みと判断しない。
+  新子プロセスは新しい非零 instance/session/correlation ID を使い、Rust worker は fork 後に開始する。
+  Monado プロセス自体は維持し、古い reference を無効化して接続 handle を cleanup 後に再作成する。
+
+例（Bridge の明示的有効化設定は各 runtime で別途指定）:
+
+```sh
+export WIVRN_LIGHT_BRIDGE_IPC=/tmp/llfa-llb.sock
+```
+
+既定パスの親 `/tmp` は共有 directory なので private directory 前提にはしない。
+Monado listener は socket を同 UID 向けの `0600` にし、peer credential を照合する。
+既存の socket／symlink／他 owner のパスを無条件に unlink しない。
+複数 instance を動かす場合は環境変数で別パスを指定し、Client と Monado の組を一致させる。
+今回の追記は両 adapter の設定契約であり、Bridge library 自体が環境変数を読んで listener を作る実装ではない。
+
 ## 確認済み実ソース
 
 Monado checkout: `/home/reina/monado`、調査 HEAD `ad7610a5561325a9b368cda5d45fe195d67f4c3b`。
@@ -37,7 +68,7 @@ DIRECT override は IMU/Lighthouse 融合の完成ではない。既存 reader �
 2. CMake から Rust FFI library を build/link。`light-bridge-hmd` は同一 Monado プロセスの opaque handle に保持する。
    HMD/system の lifetime owner に adapter を置き、WiVRn Client の切断だけで Monado 全体を終了しない。
 3. Orange Pi 上の WiVRn Client から通知を受ける UDS listener を adapter の control worker に置く。
-   pathname は user-owned private directory に置き、既存／他 owner の path を勝手に unlink しない。
+   pathname は上記の既定値／環境変数契約に従い、既存／他 owner の path を勝手に unlink しない。
    Pose／IMU は UDS に流さない。同じ UID の client を初期契約とする。
 4. Start の Bridge Host endpoint を受けたら、Lighthouse 初期化を待たず TCP 接続と session start を行う。
 5. Bridge enabled 時だけ LLFA の **local Tracker open を抑止**する。arpara HMD の HID open／reader はそのまま。
@@ -68,7 +99,8 @@ backend 未設定の generic TCP API は Mock を使うため、本番実験で�
 
 正常 stop 後の同じ TCP 接続上の新 session は handle／worker を再利用できる。
 TCP 切断後の transport swap API は未実装。現 API では cleanup を確認して接続 handle を再作成する。
-runtime lifetime owner は保持する。完全な切断再接続の要件に不足があれば Bridge 側に報告し、架空 API を作らない。
+Monado の runtime lifetime owner は保持する。WiVRn 側は合意どおり新しい Server 子プロセスを使う。
+完全な切断再接続の要件に不足があれば Bridge 側に報告し、架空 API を作らない。
 
 ## USB／権限と参照姿勢
 
@@ -100,5 +132,6 @@ CMake の include/link path は生成 include directory と `liblight_bridge_ffi
 - ローカル IMU 更新継続、Host detach 後の Tracker driver 復帰、journal 解放の証拠。
 - Host 側の WiVRn 報告と同じ correlation/session ID で時系列を照合。
 - timeout、Wi-Fi 切断、ケーブル抜去、再接続、残留資源と必要な手動回収を記録。
+- 既定 UDS パス／環境変数による変更、新 Server 子プロセスへの再接続と旧 reference の無効化を確認。
 
 実機・API・権限が不足していても Mock は進める。未検証の USB 転送、較正、融合、driver release を完成扱いしない。

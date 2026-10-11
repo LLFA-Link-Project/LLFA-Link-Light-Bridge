@@ -70,3 +70,9 @@ Dependencies must be cached before offline commands; `cargo fetch --locked` prep
 - Real backend destroy cancels/joins workers; it does not blindly clean up OS resources. Document residual-resource inspection and incomplete cleanup.
 - Bridge frame/preface version is 2; C ABI and UDS notification version remain 1. Keep identity offer encoding and import policy consistent.
 - Keep `docs/HANDOFF-MONADO.md`, `docs/HANDOFF-WIVRN.md`, and `docs/PHASE-3-REPORT.md` current. Mock/helper engine tests do not establish Phase 3 hardware acceptance.
+
+## Runtime adapter contract
+
+- Notification UDS defaults to `/tmp/llfa-llb.sock`; both WiVRn Client and Monado adapter use `WIVRN_LIGHT_BRIDGE_IPC` to override it. Path configuration alone does not enable Bridge; build and runtime both require explicit enablement.
+- The default is in shared `/tmp`: use same-UID peer credentials and socket mode 0600, verify existing path ownership, and never blindly unlink. Custom paths must match on both adapters.
+- WiVRn reconnect after a Bridge disconnect uses a new Server child process and fresh IDs. Release the Lighthouse driver before permitting USB/IP detach; audit old resources before preparing a new child. Do not reuse old tracking devices or start Rust workers before fork.

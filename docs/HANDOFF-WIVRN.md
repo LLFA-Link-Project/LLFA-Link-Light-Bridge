@@ -13,6 +13,37 @@ BSB は追加しない。
 実機成功や Phase 3 合格は、後述の観測が揃うまで主張しない。
 最初に両 repository の AGENTS.md、Bridge README、`docs/USBIP-BACKEND.md`、`docs/FFI-ABI.md`、`docs/PROTOCOL.md` を読む。
 
+## 合意済みの IPC・有効化・再接続契約（2026-10-11 追記）
+
+- Start/Stop 通知 UDS の既定パスは `/tmp/llfa-llb.sock`。
+  環境変数 `WIVRN_LIGHT_BRIDGE_IPC` で変更可能にし、WiVRn Client と Monado adapter の両方が
+  同じ変数名・同じ既定値を使う。変更時は両プロセスに同じパスを設定する。
+  未設定時は既定値、空文字や不正なパスは設定エラーとして扱う。
+  この設定は通知 UDS 用であり、root USB/IP helper の socket パスとは別。
+- Bridge はビルド・実行時とも明示的に有効化する。環境変数で UDS パスを指定しただけでは有効化しない。
+  無効時は従来の接続経路と tracking 初期化を維持する。
+- 停止順序は Lighthouse ドライバの解放 → USB/IP detach 許可 → Host detach 完了 → HMD unexport。
+  ユーザーから WiVRn 側でこの順序を実装したとの報告を受けた。組み込み先の実コードとログで確認し、
+  本 repository の Mock 成功と実 runtime の検証結果を区別する。
+- Bridge 使用時の切断後の再接続は **新しい WiVRn Server 子プロセス**で行う。
+  古い tracking device／USB handle／Bridge handle を再利用しない。
+  旧子プロセスの driver release／detach と journal の状態を確認してから新規準備を行う。
+  不確定 cleanup は既存の手動照合手順に従い、子プロセスの終了だけで資源解放済みと判断しない。
+  新子プロセスは新しい非零 instance/session/correlation ID を使い、Rust worker は fork 後に開始する。
+  Monado プロセス自体は維持し、古い reference を無効化して接続 handle を cleanup 後に再作成する。
+
+例（Bridge の明示的有効化設定は各 runtime で別途指定）:
+
+```sh
+export WIVRN_LIGHT_BRIDGE_IPC=/tmp/llfa-llb.sock
+```
+
+既定パスの親 `/tmp` は共有 directory なので private directory 前提にはしない。
+Monado listener は socket を同 UID 向けの `0600` にし、peer credential を照合する。
+既存の socket／symlink／他 owner のパスを無条件に unlink しない。
+複数 instance を動かす場合は環境変数で別パスを指定し、Client と Monado の組を一致させる。
+今回の追記は両 adapter の設定契約であり、Bridge library 自体が環境変数を読んで listener を作る実装ではない。
+
 ## 確認済み実ソース
 
 WiVRn checkout `/home/reina/WiVRn`、調査 HEAD `2795a8b63a5b91c3617328b573a460db25bd679d`。
@@ -72,11 +103,13 @@ real backend の Drop は強制 detach しない。残留は journal と OS 状�
 USB worker は内部で bounded/cancelable。poll/callback から標準 usbip を直接起動しない。
 backend 未設定の generic TCP API は Mock。実機試験では configure 成功を記録する。
 kernel 設定済み handle では `_mock` API は拒否。Mock と実験を混同しない。
-同じ TCP 上の正常停止→新 session は handle を再利用。切断後の transport swap は未実装で、cleanup 後に接続 handle の再作成が必要。
+library は同じ TCP 上の正常停止→新 session の handle 再利用をサポートする。
+WiVRn 組み込みでは、切断後は合意どおり新しい Server 子プロセスで再接続する。
+transport swap は未実装で、旧子プロセスの cleanup を確認してから新しい handle を作成する。
 
 ## WiVRn Client の通知契約
 
-この作業も WiVRn repository 側で担当する。Monado 担当と pathname／権限／広告 schema を揃える。
+この作業も WiVRn repository 側で担当する。Monado 担当と上記の既定パス／環境変数、権限、広告 schema を揃える。
 初期構成は Client と Monado が同じ Pi／同 UID の Linux process。
 Linux 以外の Client target なら現 FFI IPC API が Unsupported になるため、環境を先に確認し不足を報告する。
 
@@ -114,4 +147,5 @@ LLB_HEADER_DIR="$PWD/build/bridge-include" cargo build --manifest-path ../LLFA-L
 - 同じ session/correlation の Prepare→ExportReady→Attached→Ready→Stop/Stopped のログ。
 - driver release→自分の port detach→Pi driver 復帰→両 journal 解放の証拠。
 - 接続前 prepare、遅い通知、初期列挙失敗、timeout、Wi-Fi/cable loss、再接続、残留 journal の記録。
+- 既定 UDS パス／環境変数による変更、再接続時の Server 子プロセス PID 更新と古い tracking device 非再利用の証拠。
 - 実機／権限／不足 API の blocker。Mock で進められる箇所は進め、推測で完了扱いしない。

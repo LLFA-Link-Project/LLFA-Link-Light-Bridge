@@ -54,3 +54,11 @@ Phase 2/3/4 相当の実統合、OS USB、時計推定／融合を完成扱い�
 - device identity payload 追加で Bridge frame と TCP preface は v2。C ABI layout／UDS wire は v1 を維持。generic TCP API と explicit kernel configuration、C UDS codec を追加。remote 認証は未実装で検証ネットワーク限定。
 - PC Tracker の inventory は確認できるが、Pi／arpara HMD と実 runtime がないため実機合格条件は未達。Mock engine／worker 試験を実 USB/IP 成功として報告しない。
 - 他 repository は変更せず、別 Codex 向けに Monado／WiVRn の実ソース・必要な新規 adapter・検証証拠・残る transport 再接続制約を分けて引き継ぐ。
+
+## 組み込み契約の追記（2026-10-11）
+
+- ユーザーとの合意で通知 UDS の既定値を `/tmp/llfa-llb.sock` とし、WiVRn Client／Monado adapter 双方で `WIVRN_LIGHT_BRIDGE_IPC` による変更を可能にする。helper socket とは別。環境変数の指定だけでは Bridge を有効化しない。
+- Bridge は build/runtime の双方で明示的に enable。無効時は従来の接続経路を維持する。
+- WiVRn 側の Lighthouse driver 解放後に detach を許可する実装はユーザー報告として記録。実 runtime の検証結果は別途必要。
+- Bridge 使用時の切断再接続は新しい WiVRn Server 子プロセスで行い、古い tracking device を再利用しない。旧 resource の cleanup 確認、新しい instance/session/correlation、fork 後の worker 開始を両 handoff に追記。
+- `/tmp` の既定パスは従来の private-directory 前提の例外。socket permission／peer credential／既存 path の所有確認を維持。実装は各プロジェクトの adapter 側で行う。

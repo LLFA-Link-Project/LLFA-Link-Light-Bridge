@@ -92,7 +92,8 @@ Linux UDS の C API は `llb_ipc_send`／`llb_ipc_receive`。
 kind=1 Start は有効な単一 Endpoint、kind=2 Stop は host/correlation と prefix が必須、
 family/port は0でよい。receive の Endpoint 出力は caller が size/abi_version を初期化する。
 fd は借用し duplicate のみ閉じるが、nonblocking flag は同じ open file description で共有される。
-receive は SO_PEERCRED で same effective UID を必須とする。pathname／private directory 管理は adapter の責務。
+receive は SO_PEERCRED で same effective UID を必須とする。pathname／権限／既存 path の所有確認は adapter の責務。
+統合契約は既定 `/tmp/llfa-llb.sock`、変更用環境変数 `WIVRN_LIGHT_BRIDGE_IPC` を両 adapter で共有する。
 Rust の複数 address Start を ABI v1 で受けると Unsupported を返し、勝手に候補を捨てない。
 部分 frame のエラー／期限後は caller が元の接続も閉じる。
 
