@@ -30,7 +30,7 @@ Rust `EndpointInfo` は候補複数 address を保持できるが、ABI v1 は�
 
 基本順序: create(role) → mock_link(hmd,host) → request_start → request_prepare → poll
 → tracking_ready → publish_pose／poll → request_stop → poll Stopped → destroy。
-Mock link は test-only。同一プロセスで2 role を接続し、別プロセスの TCP は下記の明示 Mock API を使用する。
+Mock link は test-only。同一プロセスで2 role を接続し、別プロセスの TCP は下記の接続 API を使用する。
 Host prepare と HMD endpoint/start の順序はどちらが先でもよい。
 Host request_start の endpoint は unused/null 可。HMD は endpoint 必須、correlation=session。
 
@@ -70,5 +70,36 @@ role 不一致／既に接続済みは InvalidState。accept 失敗時は listen
 listen は指定した単一 IPv4/IPv6 address に bind。IPv4 は scope=0／末尾12 bytes=0 が必要。
 preface の host/correlation を照合するが認証はしない。これら API は Mock USB backend を構築し、
 現実の Tracker は操作しない。Host/HMD の Mock ledger は独立、ExportReady により固定 synthetic identity のみ許可。
-UDS notification API は現在 Rust protocol module にあり C ABI は未提供。
+UDS notification の C ABI は下記 Phase 3 追加 API を使用する。
 `tests/ffi/run.sh` は従来 smoke と TCP smoke をそれぞれ shared/static で実行する。
+
+## Phase 3 追加 API（既存 ABI layout は維持）
+
+Linux の kernel backend は接続設定前に一度だけ
+`llb_configure_kernel_usbip(handle, socket_path, path_len, policy_json, json_len, instance_id)`
+で指定する。非零 instance ID と exact policy、role に対応する root helper が必要。
+設定は helper 起動／特権操作を行わない。未設定の generic TCP API は Mock を選ぶ。
+設定済み handle に `_mock` API／`llb_mock_link` を適用すると拒否する。
+
+Host は `llb_tcp_listen` → `llb_tcp_accept`、HMD は `llb_tcp_connect`。
+設定の deadline と listener 再試行契約は上記 Mock API と同じ。
+USB export/import/detach/unexport は専用 worker が実行し、poll は completion を処理する。
+TCP で受信した device identity が exact policy と違えば Host は attach しない。
+正常 stop を完了してから destroy する。real backend destroy は cancel/join のみで、
+OS 資源の強制回収は行わない。不確定操作は helper journal を管理者が照合する。
+
+Linux UDS の C API は `llb_ipc_send`／`llb_ipc_receive`。
+kind=1 Start は有効な単一 Endpoint、kind=2 Stop は host/correlation と prefix が必須、
+family/port は0でよい。receive の Endpoint 出力は caller が size/abi_version を初期化する。
+fd は借用し duplicate のみ閉じるが、nonblocking flag は同じ open file description で共有される。
+receive は SO_PEERCRED で same effective UID を必須とする。pathname／private directory 管理は adapter の責務。
+Rust の複数 address Start を ABI v1 で受けると Unsupported を返し、勝手に候補を捨てない。
+部分 frame のエラー／期限後は caller が元の接続も閉じる。
+
+`llb_apply_notification` は HMD role 専用。Start は connected peer host と correlation を照合して開始し、
+Stop は同じ host/current session の release request に変換する。
+通知の受信や TCP 設定は adapter の control worker に置き、pose query thread を停止させない。
+remote TCP 認証・暗号化、transport の差し替え、実 clock synchronization は今後の課題。
+
+helper 配備・policy・残留資源の回収は [USBIP-BACKEND.md](USBIP-BACKEND.md)、
+組み込み順序は [Monado](HANDOFF-MONADO.md)／[WiVRn](HANDOFF-WIVRN.md) を参照。

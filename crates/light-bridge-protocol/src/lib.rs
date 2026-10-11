@@ -5,7 +5,8 @@ pub mod network;
 use light_bridge_core::{Error, ExternalPose, Result, VERSION};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::time::Duration;
-pub const MAX_FRAME: usize = 512;
+pub const PROTOCOL_VERSION: u32 = 2;
+pub const MAX_FRAME: usize = 1024;
 pub const QUEUE_CAPACITY: usize = 16;
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +28,7 @@ pub struct Message {
     pub session_id: u64,
     pub operation_id: u64,
     pub pose: Option<ExternalPose>,
+    pub device: Option<light_bridge_usbip::UsbDeviceIdentity>,
 }
 impl Message {
     pub fn control(kind: Kind, session_id: u64, operation_id: u64) -> Self {
@@ -35,18 +37,20 @@ impl Message {
             session_id,
             operation_id,
             pose: None,
+            device: None,
         }
     }
     pub fn encode(&self) -> Result<Vec<u8>> {
         if self.session_id == 0
             || self.operation_id == 0
             || (self.kind == Kind::Pose) != self.pose.is_some()
+            || (self.kind == Kind::UsbExportReady) != self.device.is_some()
         {
             return Err(Error::Protocol);
         }
         let mut b = Vec::new();
         b.extend_from_slice(b"LLFB");
-        b.extend_from_slice(&VERSION.to_be_bytes());
+        b.extend_from_slice(&PROTOCOL_VERSION.to_be_bytes());
         b.extend_from_slice(&(self.kind as u32).to_be_bytes());
         b.extend_from_slice(&self.session_id.to_be_bytes());
         b.extend_from_slice(&self.operation_id.to_be_bytes());
@@ -81,6 +85,12 @@ impl Message {
                 b.extend_from_slice(&v.to_bits().to_be_bytes());
             }
         }
+        if let Some(device) = &self.device {
+            b.extend(serde_json::to_vec(device).map_err(|_| Error::Protocol)?);
+        }
+        if b.len() + 4 > MAX_FRAME {
+            return Err(Error::Protocol);
+        }
         let mut frame = (b.len() as u32).to_be_bytes().to_vec();
         frame.extend(b);
         Ok(frame)
@@ -93,7 +103,10 @@ impl Message {
             bytes: frame,
             pos: 0,
         };
-        if r.u32()? as usize != frame.len() - 4 || r.take(4)? != b"LLFB" || r.u32()? != VERSION {
+        if r.u32()? as usize != frame.len() - 4
+            || r.take(4)? != b"LLFB"
+            || r.u32()? != PROTOCOL_VERSION
+        {
             return Err(Error::Protocol);
         }
         let kind = match r.u32()? {
@@ -137,6 +150,12 @@ impl Message {
         } else {
             None
         };
+        let device = if kind == Kind::UsbExportReady {
+            let bytes = r.take(frame.len() - r.pos)?;
+            Some(serde_json::from_slice(bytes).map_err(|_| Error::Protocol)?)
+        } else {
+            None
+        };
         if r.pos != frame.len() {
             return Err(Error::Protocol);
         }
@@ -145,6 +164,7 @@ impl Message {
             session_id,
             operation_id,
             pose,
+            device,
         })
     }
 }
@@ -209,6 +229,22 @@ impl Transport {
     pub fn send(&self, kind: Kind, session: u64, op: u64) -> Result<()> {
         send(&self.control_tx, &Message::control(kind, session, op))
     }
+    pub fn export_ready(
+        &self,
+        session: u64,
+        device: light_bridge_usbip::UsbDeviceIdentity,
+    ) -> Result<()> {
+        send(
+            &self.control_tx,
+            &Message {
+                kind: Kind::UsbExportReady,
+                session_id: session,
+                operation_id: 3,
+                pose: None,
+                device: Some(device),
+            },
+        )
+    }
     pub fn receive(&self) -> Result<Option<Message>> {
         match self.control_rx.try_recv() {
             Ok(b) => Ok(Some(Message::decode(&b)?)),
@@ -231,6 +267,7 @@ impl Transport {
                 session_id: p.session_id,
                 operation_id: p.sequence,
                 pose: Some(p),
+                device: None,
             },
         )
     }
@@ -276,6 +313,7 @@ mod tests {
             session_id: 1,
             operation_id: 1,
             pose: Some(ExternalPose::mock(1, 1, 42)),
+            device: None,
         };
         let b = m.encode().unwrap();
         assert_eq!(Message::decode(&b).unwrap(), m);
@@ -283,7 +321,7 @@ mod tests {
             assert!(Message::decode(&b[..n]).is_err());
         }
         let mut v = b.clone();
-        v[11] = 2;
+        v[11] = 3;
         assert!(Message::decode(&v).is_err());
         let mut v = b.clone();
         v.push(0);
@@ -302,5 +340,16 @@ mod tests {
         assert_eq!(a.send(Kind::Hello, 1, 1), Err(Error::Backpressure));
         drop(b);
         assert_eq!(a.send(Kind::Hello, 1, 1), Err(Error::Disconnected));
+    }
+    #[test]
+    fn device_offer_is_required_and_strictly_decoded() {
+        let mut m = Message::control(Kind::UsbExportReady, 1, 3);
+        assert_eq!(m.encode(), Err(Error::Protocol));
+        m.device = Some(light_bridge_usbip::UsbDeviceIdentity::mock());
+        let b = m.encode().unwrap();
+        assert_eq!(Message::decode(&b).unwrap(), m);
+        let mut b = b;
+        b[11] = 1;
+        assert_eq!(Message::decode(&b), Err(Error::Protocol));
     }
 }

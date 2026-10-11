@@ -1,7 +1,7 @@
 # テスト範囲
 
 CI は fmt、clippy warnings-as-errors、Rust tests、生成ヘッダ整合性、C ABI smoke、headless Mock を実行する。
-native 実行結果は `PHASE-0-1-REPORT.md` と `PHASE-2-REPORT.md` を参照。CI のリモート実行は未実施。
+native 実行結果は `PHASE-0-1-REPORT.md` 、`PHASE-2-REPORT.md` と `PHASE-3-REPORT.md` を参照。CI のリモート実行は未実施。
 
 ## 実装済み試験
 
@@ -37,3 +37,17 @@ p50/p95/p99 は実機導入後に測る。Mock 実行速度を低遅延性能の
 - TCP C ABI smoke: shared/static libraries、無較正 reference、release 前 detach 拒否。
 - read-only sysfs fixture: 欠落 serial、不完全 inventory、HMD deny、vhci ancestry、exact allowlist。
 - remote mock offer: ExportReady 前 attach 拒否、実 device identity 拒否、session ownership。
+
+## Phase 3 追加試験
+
+- Fake KernelOps／永続 journal: runtime release barrier、busy export 拒否、実測 port fingerprint、別 owner、再起動時 adopt 拒否、journal failure 前の OS mutation 禁止。
+- ambiguous attach／CLI failure の pending 保持、実ファイル atomic 保存／crash `.new`、HMD deny／interface busid／不正 vhci status／未許可 UID。
+- CLI 固定 argv／IPv6 scope、期限 kill/reap、失敗 exit status、helper packet size／cancel／peer UID、一般ユーザーの偽 helper 拒否。
+- actual USB worker + slow Mock: control poll 非ブロッキング、export/attach 中の Stop、cancel/join、identity mismatch 拒否、Prepare 前の Stop。
+- protocol v2 identity roundtrip／旧 version 拒否、kernel FFI opt-in と Mock API 拒否。
+- shared/static C smoke: UDS Start/Stop codec、notification role/session/peer guard、既存 lifecycle/TCP。
+
+これらは LinuxOps の実 kernel 操作を実行しない。フル環境では
+[Backend の実機手順](USBIP-BACKEND.md) と両 handoff の acceptance checklist を実施する。
+実 attach/detach、ケーブル／Wi-Fi 切断、連続再接続、実 tracking driver 検出、HMD IMU 維持、
+runtime 配備、helper service、arm64/MSRV は未検証のまま分けて記録する。

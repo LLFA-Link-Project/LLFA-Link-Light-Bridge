@@ -1,7 +1,10 @@
 //! WiVRn-process library. Runtime must release its tracking handles before stop.
 use light_bridge_core::*;
 use light_bridge_protocol::{Kind, Transport};
-use light_bridge_usbip::{MockUsbIp, UsbDeviceIdentity, UsbTransferBackend};
+use light_bridge_usbip::{
+    manager::{Kind as UsbKind, ManagedUsb, Task, UsbManager},
+    MockUsbIp, UsbDeviceIdentity, UsbTransferBackend,
+};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 pub struct HostServer {
@@ -9,6 +12,10 @@ pub struct HostServer {
     transport: Transport,
     usb: Arc<Mutex<MockUsbIp>>,
     port: Option<u32>,
+    managed: Option<UsbManager>,
+    selected: UsbDeviceIdentity,
+    pending_attach: bool,
+    pending_detach: bool,
     prepare_requested: bool,
     last_control: u64,
     last_kind: Option<Kind>,
@@ -22,12 +29,66 @@ impl HostServer {
             transport,
             usb,
             port: None,
+            managed: None,
+            selected: UsbDeviceIdentity::mock(),
+            pending_attach: false,
+            pending_detach: false,
             prepare_requested: false,
             last_control: 0,
             last_kind: None,
             stop_requested: false,
             last_pose: 0,
         }
+    }
+    pub fn with_usb_backend(
+        transport: Transport,
+        backend: Box<dyn ManagedUsb>,
+        device: UsbDeviceIdentity,
+        timeout: Duration,
+    ) -> Result<Self> {
+        if (device.vid, device.pid) == (0x2c30, 0x1050) {
+            return Err(Error::DeviceDenied);
+        }
+        let mut server = Self::new(
+            transport,
+            Arc::new(Mutex::new(MockUsbIp::default())),
+            timeout,
+        );
+        server.managed = Some(UsbManager::new(backend));
+        server.selected = device;
+        Ok(server)
+    }
+    fn attached(&mut self, session: u64, port: u32) -> Result<()> {
+        self.port = Some(port);
+        if self.session.state == State::Stopping {
+            return self.stop(true);
+        }
+        self.transport.send(Kind::UsbAttached, session, 4)?;
+        self.session.advance(session, State::UsbAttached)?;
+        self.session.advance(session, State::TrackingInitializing)
+    }
+    fn poll_usb(&mut self) -> Result<()> {
+        while let Some(done) = match &self.managed {
+            Some(m) => m.poll()?,
+            None => None,
+        } {
+            self.session.check(done.session)?;
+            match done.kind {
+                UsbKind::Attach => self.pending_attach = false,
+                UsbKind::Detach => self.pending_detach = false,
+                _ => return Err(Error::InvalidState),
+            };
+            let result = done.result?;
+            match done.kind {
+                UsbKind::Attach => self.attached(done.session, result.ok_or(Error::UsbAttach)?)?,
+                UsbKind::Detach => {
+                    self.port = None;
+                    self.transport.send(Kind::Stop, done.session, 6)?;
+                }
+                _ => return Err(Error::InvalidState),
+            }
+        }
+        Ok(())
     }
     pub fn start(&mut self, id: u64) -> Result<()> {
         if self.session.state != State::Idle {
@@ -56,6 +117,7 @@ impl HostServer {
         Ok(())
     }
     pub fn poll(&mut self) -> Result<()> {
+        self.poll_usb()?;
         if self.session.expired() && self.session.state != State::Stopping {
             self.stop_requested = true;
             return Err(Error::Timeout);
@@ -96,20 +158,27 @@ impl HostServer {
                     self.try_prepare()?;
                 }
                 Kind::UsbExportReady => {
+                    if self.session.state == State::Stopping {
+                        continue;
+                    }
                     if self.session.state != State::PreparingUsb {
                         return Err(Error::InvalidState);
                     }
-                    let port = {
-                        let mut usb = self.usb.lock().map_err(|_| Error::InvalidState)?;
-                        let device = UsbDeviceIdentity::mock();
-                        usb.observe_export_ready(m.session_id, &device)?;
-                        usb.attach(m.session_id, &device)?
-                    };
-                    self.port = Some(port);
-                    self.transport.send(Kind::UsbAttached, m.session_id, 4)?;
-                    self.session.advance(m.session_id, State::UsbAttached)?;
-                    self.session
-                        .advance(m.session_id, State::TrackingInitializing)?;
+                    let device = m.device.ok_or(Error::Protocol)?;
+                    if device != self.selected {
+                        return Err(Error::DeviceDenied);
+                    }
+                    if let Some(manager) = &self.managed {
+                        manager.submit(Task::Attach(m.session_id, device))?;
+                        self.pending_attach = true;
+                    } else {
+                        let port = {
+                            let mut usb = self.usb.lock().map_err(|_| Error::InvalidState)?;
+                            usb.observe_export_ready(m.session_id, &device)?;
+                            usb.attach(m.session_id, &device)?
+                        };
+                        self.attached(m.session_id, port)?;
+                    }
                 }
                 Kind::Stopped => {
                     if self.session.state != State::Stopping {
@@ -161,6 +230,17 @@ impl HostServer {
         }
         self.stop_requested = true;
         self.session.stop(self.session.id)?;
+        if let Some(manager) = &self.managed {
+            if self.pending_attach || self.pending_detach {
+                return Ok(());
+            }
+            if let Some(port) = self.port {
+                manager.submit(Task::Detach(self.session.id, port))?;
+                self.pending_detach = true;
+                return Ok(());
+            }
+            return self.transport.send(Kind::Stop, self.session.id, 6);
+        }
         if let Some(port) = self.port {
             self.usb
                 .lock()
@@ -186,6 +266,11 @@ impl HostServer {
 }
 impl Drop for HostServer {
     fn drop(&mut self) {
+        if self.managed.is_some() {
+            // Never detach real USB on Drop without the runtime release barrier.
+            self.managed.take();
+            return;
+        }
         // Mock runtime has no real USB handles. Production adapter needs an explicit release barrier.
         if let Some(port) = self.port.take() {
             let _ = self.usb.lock().map(|mut u| u.detach(self.session.id, port));

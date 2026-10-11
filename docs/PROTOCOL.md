@@ -1,4 +1,4 @@
-# Bridge Mock protocol v1
+# Bridge protocol v2
 
 USB/IP や WiVRn の既存プロトコルとは独立。in-memory と TCP の双方で同じ frame を使用。
 フレームは big endian。Rust／C のメモリをそのままネットワークへ送らない。
@@ -7,21 +7,24 @@ USB/IP や WiVRn の既存プロトコルとは独立。in-memory と TCP の双
 |---|---|---|
 | 0 | 4 | payload length (prefix 自体を含まない) |
 | 4 | 4 | magic `LLFB` |
-| 8 | 4 | version = 1 |
+| 8 | 4 | version = 2 |
 | 12 | 4 | kind |
 | 16 | 8 | session ID (nonzero) |
 | 24 | 8 | operation ID / pose sequence (nonzero) |
-| 32 | variable | pose payload または空 |
+| 32 | variable | pose payload／device identity／空 |
 
-制御 frame は32 bytes、pose frame は140 bytes。最大 frame は512 bytes。
+identity を持たない制御 frame は32 bytes、pose frame は140 bytes。最大 frame は1024 bytes。
+UsbExportReady は VID/PID、serial、canonical sysfs_path、topology、busid の
+UsbDeviceIdentity JSON を payload に必須とする。未知フィールドを拒否し、他 kind の identity を拒否する。
 不足／余剰 byte、不一致 length/magic/version、未知 kind を reject。未知 field は余剰 byte として reject。
 将来 version は negotiation を追加するまで fail closed。
 
 kind: Hello=1, Prepare=2, UsbExportReady=3, UsbAttached=4, TrackingReady=5,
 Stop=6, Stopped=7, Heartbeat=8, StopRequest=9, Pose=10。
 StopRequest は HMD から Host runtime へ release を要求する追加 message。
-phase1 は選択対象が固定 Mock device のため、SessionOffer／UsbDeviceOffer／ClockSync／Error payload は未実装。
-endpoint は下記 UDS 通知に実装。実 device identity／capabilities は Phase 3 前に追加が必要。
+UsbExportReady の identity は Host の exact import policy と照合してから attach する。
+汎用 SessionOffer／capabilities negotiation／ClockSync／Error payload は未実装。
+endpoint は下記 UDS 通知に実装。旧 Bridge v1 は拒否する。
 
 Pose payload 順序: tracked_device_id, tracking_origin_id, frame_id, source_clock_id,
 sample_timestamp_ns, clock_uncertainty_ns (各8 bytes)、timestamp_semantics と flags (各4 bytes)、
@@ -43,15 +46,16 @@ HMD timeout は pose を無効にして StopRequest。停止処理中は timeout
 Idle → Connecting → Negotiated → PreparingUsb → UsbAttached → TrackingInitializing → Active
 → Stopping → Cleanup → Idle。通信失敗は Failed。
 Host runtime の driver release が確認されるまで detach しない。
-Stop ACK の再送は cleanup 後も受理。再接続で HMD handle／worker を作り直さない。
+Stop ACK の再送は cleanup 後も受理。正常 stop 後の同一 TCP 接続では HMD handle／worker を再利用する。
+TCP 切断後の transport 差し替え API は未実装で、cleanup と handle 再作成が必要。
 
 control の認証、暗号化、datagram loss、実ネットワーク rate limiting、
-複数 peer／replay protection は未実装。Mock frame codec をそのまま公開 network listener として使用しない。
+複数 peer／replay protection は未実装。検証ネットワークへのアクセスを制限し、公開 network listener として使用しない。
 
 ## Phase 2 TCP / UDS
 
 TCP listener は単一 Bridge port。接続順序は control、pose の2 socket。
-各 socket の preface は `LLBN` (4) + version (u32) + host_id (u64) + correlation_id (u64)
+各 socket の preface は `LLBN` (4) + version=2 (u32) + host_id (u64) + correlation_id (u64)
 + lane (u8: control=0, pose=1)、計25 bytes、整数は big endian。
 Host は期待した2 lane の preface を確認してから各 socket に ACK byte=1 を返す。
 Host/correlation/lane 不一致は接続設定失敗。相関 ID は認証トークンではない。
@@ -61,14 +65,15 @@ Host/correlation/lane 不一致は接続設定失敗。相関 ID は認証トー
 control に Pose、pose に control を受信すると拒否。受信 pose queue Full は新着を drop、control Full は接続終了。
 worker 終了後 caller は Disconnected を観測する（worker 内部の詳細エラー分類は API 未提供）。
 
-UDS notification は length (u32) + `LLBI` + version (u32) + kind (u32: Start=1, Stop=2)
+UDS notification は length (u32) + `LLBI` + version=1 (u32) + kind (u32: Start=1, Stop=2)
 + host_id (u64) + correlation_id (u64) + address count (u32)、prefix 込み36 bytes。
 Start は続けて各 address の UTF-8 byte length (u32) と SocketAddr 文字列（IPv6 scope ID 対応）を格納。
-最大8 addresses、全体≤512 bytes、Start の port は非零、Stop の address count は0。
+最大8 addresses、全体≤1024 bytes、Start の port は非零、Stop の address count は0。
 未知 version/kind、余剰 byte、過大 count/length、不正 address を拒否。pose/IMU は格納しない。
 通知送受信は絶対 deadline、エラー後は stream を閉じる。partial frame を消費した stream で再開しない。
 Rust `ipc::send/receive` は渡された stream を nonblocking に設定する。
 本番 adapter は UDS pathname／private directory と peer credential 検証の責任を持つ。
 
-今の TCP/UDS は固定 synthetic tracker・Mock backend の試験用。WiVRn の認証／既存 port を
-流用せず、実 WiVRn の Bridge endpoint 広告契約はまだ変更していない。
+TCP は明示選択した Mock／kernel backend を運ぶ。UDS は endpoint 通知のみ。
+WiVRn の認証／既存 port を流用せず、実 WiVRn の Bridge endpoint 広告契約はまだ変更していない。
+USB helper の local credential 認証は Bridge remote TCP の認証にはならない。

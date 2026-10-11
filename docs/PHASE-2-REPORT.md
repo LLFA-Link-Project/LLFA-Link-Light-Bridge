@@ -1,5 +1,8 @@
 # Phase 2 接続先通知・通信の実装報告
 
+本報告は Phase 2 時点の記録。現行の Phase 3 では Bridge wire v2／kernel backend を追加した。
+[最新報告](PHASE-3-REPORT.md) を参照。
+
 2026-10-11、仕様 v0.3.1。**実 UDS/TCP と Mock runtime adapter による縦断試験を実装した。
 既存 Monado／WiVRn 本体への組み込みは未完了であり、Phase 2 全体を本番統合済みとは扱わない。**
 

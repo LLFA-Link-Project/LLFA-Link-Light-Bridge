@@ -1,0 +1,14 @@
+{
+  "role": "Import",
+  "client_uid": 1000,
+  "client_gid": 1000,
+  "device": {
+    "vid": 10462,
+    "pid": 8960,
+    "serial": "REPLACE_WITH_TRACKER_SERIAL",
+    "busid": "1-1",
+    "sysfs_path": "/sys/devices/REPLACE_WITH_ORANGE_PI_CANONICAL_PATH",
+    "topology": "REPLACE_WITH_CURRENT_ORANGE_PI_TOPOLOGY"
+  },
+  "remote": "192.0.2.1:3240"
+}

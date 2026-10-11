@@ -44,3 +44,13 @@ Phase 2/3/4 相当の実統合、OS USB、時計推定／融合を完成扱い�
   Mock adapter の成功を runtime 統合や無効時 WiVRn 起動回帰の証拠にしない。
 - read-only SysfsInventory／usbip-probe は Phase 0 の診断改善。Phase 3 の USB 操作を先行実装したとは扱わない。
 - 認証・暗号化・広告の信頼契約は未実装。TCP C API は `_mock` を明示し、本番 listener と扱わない。
+
+## Phase 3 の更新（上記の将来項目を部分的に置き換える）
+
+- Linux USB/IP の実操作は標準 CLI と root helper に限定し、一般ユーザーの両 library は proxy と専用 USB worker を保持する。主動作核を daemon に移さない。
+- exact allowlist と source identity offer、実測 vhci port、boot/session/instance の所有権、操作前の永続 journal を追加。runtime release → detach → unbind と driver 復帰の確認を実装。
+- 復旧の不確定性を隠さない。CLI error、列挙失敗、再起動 journal は自動 adopt／推測 detach せず管理者照合。Drop は kernel cleanup を成功扱いせず worker cancel/join のみ。
+- serde/serde_json と Linux libc を追加し bounded helper RPC／credential／process-group 管理を使う。独自 JSON parser を作らない。dependencies のライセンスは別途適用。
+- device identity payload 追加で Bridge frame と TCP preface は v2。C ABI layout／UDS wire は v1 を維持。generic TCP API と explicit kernel configuration、C UDS codec を追加。remote 認証は未実装で検証ネットワーク限定。
+- PC Tracker の inventory は確認できるが、Pi／arpara HMD と実 runtime がないため実機合格条件は未達。Mock engine／worker 試験を実 USB/IP 成功として報告しない。
+- 他 repository は変更せず、別 Codex 向けに Monado／WiVRn の実ソース・必要な新規 adapter・検証証拠・残る transport 再接続制約を分けて引き継ぐ。

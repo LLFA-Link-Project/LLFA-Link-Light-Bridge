@@ -7,6 +7,8 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <time.h>
+#include <sys/socket.h>
+#include <unistd.h>
 _Static_assert(sizeof(LlbPose)==136, "pose ABI");
 _Static_assert(offsetof(LlbPose,position_m)==80, "pose offset");
 _Static_assert(sizeof(LlbEndpoint)==56, "endpoint ABI");
@@ -27,9 +29,17 @@ int main(void) {
  assert(llb_create(&cfg,&host)==0);
  assert(llb_mock_link(hmd,host)==0);
  LlbEndpoint ep=llb_mock_client_endpoint(42);
+ int sockets[2]; assert(socketpair(AF_UNIX,SOCK_STREAM,0,sockets)==0);
+ LlbEndpoint notified={.size=sizeof(notified),.abi_version=1}; uint32_t kind=0;
+ assert(llb_ipc_send(sockets[0],1,&ep,1000)==0);
+ assert(llb_ipc_receive(sockets[1],1000,&kind,&notified)==0 && kind==1 && notified.correlation_id==42);
+ assert(llb_ipc_send(sockets[0],2,&ep,1000)==0);
+ assert(llb_ipc_receive(sockets[1],1000,&kind,&notified)==0 && kind==2 && notified.port==0);
+ close(sockets[0]); close(sockets[1]);
  assert(llb_request_start(host,42,NULL)==0);
  assert(llb_request_prepare(host)==0);
- assert(llb_request_start(hmd,42,&ep)==0);
+ assert(llb_apply_notification(host,1,&ep)==2);
+ assert(llb_apply_notification(hmd,1,&ep)==0);
  assert(llb_poll(hmd)==0); assert(llb_poll(host)==0);
  assert(llb_poll(hmd)==0); assert(llb_poll(host)==0); assert(llb_poll(hmd)==0);
  assert(last_state==5);
@@ -39,6 +49,7 @@ int main(void) {
  assert(llb_publish_pose(host,&p)==0);
  for(int i=0;i<100 && !poses;i++){struct timespec delay={0,1000000};nanosleep(&delay,NULL);assert(llb_poll(hmd)==0);}
  assert(poses==1);assert(states>0);assert(monado.reference_count==1 && !monado.head_pose_valid);
+ LlbEndpoint wrong=ep; wrong.host_id++; assert(llb_apply_notification(hmd,2,&wrong)==3);
  assert(llb_request_stop(host,0)==9);
  assert(llb_mock_server_release_and_stop(host)==0);assert(llb_poll(hmd)==0);assert(llb_poll(host)==0);assert(last_state==0);
  unsigned before=poses;

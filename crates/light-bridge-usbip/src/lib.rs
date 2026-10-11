@@ -1,8 +1,16 @@
-//! Mock USB/IP transfer and read-only Linux inventory. No OS USB resources are changed.
+//! USB inventory/planning, Mock transfer, and helper-mediated Linux kernel USB/IP.
+#[cfg(target_os = "linux")]
+pub mod command;
+#[cfg(target_os = "linux")]
+pub mod helper;
 pub mod inventory;
+#[cfg(target_os = "linux")]
+pub mod kernel;
+pub mod manager;
 use light_bridge_core::{Error, Result};
 use std::collections::{BTreeMap, BTreeSet};
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct UsbDeviceIdentity {
     pub vid: u16,
     pub pid: u16,

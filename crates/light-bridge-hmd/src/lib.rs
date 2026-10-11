@@ -1,7 +1,10 @@
-//! Monado-process library. Real LLFA adapter is intentionally not patched in Phase 1.
+//! Monado-process library with independent pose and cancellable USB workers.
 use light_bridge_core::*;
 use light_bridge_protocol::{Kind, Message, Transport};
-use light_bridge_usbip::{MockUsbIp, UsbDeviceIdentity, UsbTransferBackend};
+use light_bridge_usbip::{
+    manager::{Kind as UsbKind, ManagedUsb, Task, UsbManager},
+    MockUsbIp, UsbDeviceIdentity, UsbTransferBackend,
+};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -22,6 +25,10 @@ pub struct HmdClient {
     pub session: Session,
     transport: Transport,
     usb: SharedUsb,
+    managed: Option<UsbManager>,
+    selected: UsbDeviceIdentity,
+    pending_unexport: bool,
+    export_requested: bool,
     pose: Arc<Mutex<PoseState>>,
     cancel: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
@@ -84,12 +91,92 @@ impl HmdClient {
             session: Session::new(timeout),
             transport,
             usb,
+            managed: None,
+            selected: UsbDeviceIdentity::mock(),
+            pending_unexport: false,
+            export_requested: false,
             pose,
             cancel,
             worker: Some(worker),
             last_control: 0,
             last_kind: None,
         }
+    }
+    /// Use a cancellable USB backend on a dedicated worker. The runtime remains in-process.
+    pub fn with_usb_backend(
+        transport: Transport,
+        backend: Box<dyn ManagedUsb>,
+        device: UsbDeviceIdentity,
+        timeout: Duration,
+    ) -> Result<Self> {
+        if (device.vid, device.pid) == (0x2c30, 0x1050) {
+            return Err(Error::DeviceDenied);
+        }
+        Message {
+            kind: Kind::UsbExportReady,
+            session_id: 1,
+            operation_id: 3,
+            pose: None,
+            device: Some(device.clone()),
+        }
+        .encode()?;
+        let mut client = Self::new(
+            transport,
+            Arc::new(Mutex::new(MockUsbIp::default())),
+            timeout,
+        );
+        client.managed = Some(UsbManager::new(backend));
+        client.selected = device;
+        Ok(client)
+    }
+    fn poll_usb(&mut self) -> Result<()> {
+        while let Some(done) = match &self.managed {
+            Some(m) => m.poll()?,
+            None => None,
+        } {
+            self.session.check(done.session)?;
+            if done.kind == UsbKind::Unexport {
+                self.pending_unexport = false;
+            }
+            if let Err(error) = done.result {
+                self.disable_pose();
+                return Err(error);
+            }
+            match done.kind {
+                UsbKind::Export if self.session.state == State::PreparingUsb => self
+                    .transport
+                    .export_ready(done.session, self.selected.clone())?,
+                UsbKind::Export if self.session.state == State::Stopping => {}
+                UsbKind::Unexport if self.session.state == State::Stopping => {
+                    self.transport.send(Kind::Stopped, done.session, 7)?;
+                    self.session.cleaned();
+                    self.export_requested = false;
+                }
+                _ => return Err(Error::InvalidState),
+            }
+        }
+        Ok(())
+    }
+    fn unexport_after_host_detach(&mut self, session: u64) -> Result<()> {
+        if self.managed.is_some() && !self.export_requested {
+            self.transport.send(Kind::Stopped, session, 7)?;
+            self.session.cleaned();
+            return Ok(());
+        }
+        if let Some(manager) = &self.managed {
+            if !self.pending_unexport {
+                manager.submit(Task::Unexport(session))?;
+                self.pending_unexport = true;
+            }
+        } else {
+            self.usb
+                .lock()
+                .map_err(|_| Error::InvalidState)?
+                .unexport(session)?;
+            self.transport.send(Kind::Stopped, session, 7)?;
+            self.session.cleaned();
+        }
+        Ok(())
     }
     pub fn start(&mut self, id: u64, endpoint: &EndpointInfo) -> Result<()> {
         endpoint.validate()?;
@@ -125,6 +212,7 @@ impl HmdClient {
         Ok(())
     }
     pub fn poll(&mut self) -> Result<()> {
+        self.poll_usb()?;
         if self.session.expired() && self.session.state != State::Stopping {
             self.request_stop()?;
             return Err(Error::Timeout);
@@ -148,6 +236,15 @@ impl HmdClient {
                 continue;
             }
             self.session.check(m.session_id)?;
+            if m.kind == Kind::Stop && self.session.state == State::Stopping {
+                self.unexport_after_host_detach(m.session_id)?;
+                continue;
+            }
+            if self.session.state == State::Stopping
+                && matches!(m.kind, Kind::UsbAttached | Kind::TrackingReady)
+            {
+                continue;
+            }
             if m.kind == Kind::Heartbeat {
                 self.session.touch();
                 continue;
@@ -165,11 +262,17 @@ impl HmdClient {
                 Kind::Hello => self.session.advance(m.session_id, State::Negotiated)?,
                 Kind::Prepare => {
                     self.session.advance(m.session_id, State::PreparingUsb)?;
-                    self.usb
-                        .lock()
-                        .map_err(|_| Error::InvalidState)?
-                        .export(m.session_id, &UsbDeviceIdentity::mock())?;
-                    self.transport.send(Kind::UsbExportReady, m.session_id, 3)?;
+                    if let Some(manager) = &self.managed {
+                        manager.submit(Task::Export(m.session_id, self.selected.clone()))?;
+                        self.export_requested = true;
+                    } else {
+                        self.usb
+                            .lock()
+                            .map_err(|_| Error::InvalidState)?
+                            .export(m.session_id, &self.selected)?;
+                        self.transport
+                            .export_ready(m.session_id, self.selected.clone())?;
+                    }
                 }
                 Kind::UsbAttached => {
                     self.session.advance(m.session_id, State::UsbAttached)?;
@@ -183,12 +286,7 @@ impl HmdClient {
                 Kind::Stop => {
                     self.session.stop(m.session_id)?;
                     self.disable_pose();
-                    self.usb
-                        .lock()
-                        .map_err(|_| Error::InvalidState)?
-                        .unexport(m.session_id)?;
-                    self.transport.send(Kind::Stopped, m.session_id, 7)?;
-                    self.session.cleaned();
+                    self.unexport_after_host_detach(m.session_id)?;
                 }
                 _ => return Err(Error::InvalidState),
             }
@@ -249,7 +347,10 @@ impl Drop for HmdClient {
         if let Some(w) = self.worker.take() {
             let _ = w.join();
         }
-        let _ = self.usb.lock().map(|mut u| u.unexport(self.session.id));
+        // A real backend is not unbound from Drop: Host release/detach was not acknowledged.
+        if self.managed.take().is_none() {
+            let _ = self.usb.lock().map(|mut u| u.unexport(self.session.id));
+        }
     }
 }
 

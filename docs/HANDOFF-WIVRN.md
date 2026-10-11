@@ -1,0 +1,117 @@
+# WiVRn 担当 Codex への LLFA Bridge 組み込み指示書
+
+## 目的と前提
+
+`LLFA-Link-Light-Bridge-IMPLEMENTATION-INSTRUCTIONS-v0.3.1.md` に沿って、
+**WiVRn Server プロセス内**に Bridge Host library、HMD 側 WiVRn Client に endpoint 通知 adapter を組み込む。
+Tracker は Pi の USB/IP export を Host の vhci_hcd に import し、Lighthouse driver 初期列挙より前に準備を終える。
+Bridge を別の主動作 daemon に移さない。特権 helper／標準 usbipd は別プロセスでよい。
+BSB は追加しない。
+
+本書を含む Bridge commit を記録し、Monado 担当と同じ commit を使う。
+現在は PC の Tracker のみ。Phase 3 の code／Mock／故障試験はあるが、実転送・Orange Pi・runtime linking は未検証。
+実機成功や Phase 3 合格は、後述の観測が揃うまで主張しない。
+最初に両 repository の AGENTS.md、Bridge README、`docs/USBIP-BACKEND.md`、`docs/FFI-ABI.md`、`docs/PROTOCOL.md` を読む。
+
+## 確認済み実ソース
+
+WiVRn checkout `/home/reina/WiVRn`、調査 HEAD `2795a8b63a5b91c3617328b573a460db25bd679d`。
+integration commit `0e03cec0e90288a7598b597bb9243067bad49fd9`。
+checkout が変わっていれば位置／lifetime を再調査する。
+
+- `server/driver/wivrn_session.cpp:174`: constructor 内 `steamvr_lh_create_devices(nullptr,this)`。
+- 同 `:197`: `hmd.set_external_head(...,steamvr_lh_get_latest_pose,mount)`。
+- `server/driver/wivrn_hmd.cpp`: external head の latest/predicted source。
+- `patches/monado/0013-d-steamvr_lh-tracking-only-hmd.patch`: latest history timestamp API。
+- `client/wivrn_client.cpp:74`: `wivrn_session::handshake`、`:224,237`: IPv6/IPv4 constructor。
+- `common/wivrn_packets.h:783`: `to_headset::handshake` は現在 stream_port のみ。
+- `server/driver/wivrn_connection.cpp`／`server/ipc_server_cb.cpp` と `server/main.cpp` を lifetime/広告経路の追加調査対象にする。
+  main は runtime child を fork する構成がある。Rust worker を親で開始してから fork しない。
+
+新しい Bridge port/host/correlation 広告契約は未実装。WiVRn stream_port を Bridge port として流用しない。
+既存最新履歴 timestamp を、測定済みの光学サンプル時刻と断定しない。
+
+## Server の作業順序
+
+1. Bridge 無効時の既存 WiVRn／Lighthouse 起動を記録。build/runtime を opt-in とし、無効時は広告／listener／helper も起動しない。
+2. runtime **Server lifetime owner** に Bridge handle と control worker を保持する。
+   VR session の tracking driver lifetime と区別する。実際に driver を動かす child process 内で library を開始する。
+3. CMake から Bridge FFI を build/link。Host は role=`LLB_HOST`、kernel policy role=`Import`。
+4. Host Bridge listener を bind して port を取得し、信頼した WiVRn handshake/metadata 経路で
+   Client に `{bridge_port, host_id, correlation_id}` を早期提示する契約を実装する。
+   既存 protocol compatibility／version と旧 Client の挙動を確認し、無断の wire layout 変更を避ける。
+5. Client が TCP 接続先 address と広告を得たら Pi の Monado に UDS Start を送る。
+   Lighthouse 初期化完了や映像開始を待たない。WiVRn 接続、Bridge start、driver init を別イベントにする。
+6. Host start と prepare intent を記録し、状態 TrackingInitializing=5 が来るまで driver 初期列挙を開始しない。
+   待機中は control poll/heartbeat を止めず、render/pose query thread もブロックしない。
+7. attach／OS enumeration barrier 後だけ `steamvr_lh_create_devices`。
+   許可した Tracker serial を明示選択し、device usable を確認した後に `llb_tracking_ready`。
+8. 停止時は pose publish を止め、tracking driver の参照／USB handles を実際に解放してから
+   `llb_request_stop(host,1)`。driver を解放していない状態で1を渡さない。
+9. Host detach 完了後の Stop、Pi unexport 完了後の Stopped を処理し、Idle=0 と両 journal 解放を確認する。
+
+constructor rollback／exception の経路でも release barrier を守る。
+pose worker が終了したことだけを tracking driver の USB release acknowledgement に読み替えない。
+real backend の Drop は強制 detach しない。残留は journal と OS 状態で限定回収する。
+
+## C ABI の接続
+
+生成ヘッダ `light_bridge.h` が実シグネチャ。ABI version=1、Bridge wire version=2。
+
+- `llb_create`: role Host、callback は必要に応じ state のみ、timeout は USB worker 待機を考慮する。
+- `llb_configure_kernel_usbip`: TCP setup 前に1回。root import helper の socket、runtime policy JSON、各 byte length、非零 instance ID。
+  device identity は Pi 側の snapshot、remote は Pi の usbipd endpoint。
+- `llb_tcp_listen(host,&endpoint)`: port=0 を指定でき、実 port が返る。非零 host/correlation ID を広告前に決める。
+- `llb_tcp_accept(host)`: control worker 上で期限付き setup。広告後の HMD connect と並行実行。
+- `llb_request_start(host,session,NULL)`、`llb_request_prepare(host)`、`llb_poll`／`llb_heartbeat`。
+- `llb_get_state(host,&state,&needs_runtime_release)` の state=5 が USB attach/列挙 barrier。
+- driver の準備成功後 `llb_tracking_ready(host)`。state=6 でだけ publish を許可。
+- `needs_runtime_release=1` は timeout／Client stop／切断の cleanup 要求。release 後に `llb_request_stop(host,1)`。
+- `llb_destroy(&host)` は callback/userdata 生存中、control worker と直列に実行。
+
+USB worker は内部で bounded/cancelable。poll/callback から標準 usbip を直接起動しない。
+backend 未設定の generic TCP API は Mock。実機試験では configure 成功を記録する。
+kernel 設定済み handle では `_mock` API は拒否。Mock と実験を混同しない。
+同じ TCP 上の正常停止→新 session は handle を再利用。切断後の transport swap は未実装で、cleanup 後に接続 handle の再作成が必要。
+
+## WiVRn Client の通知契約
+
+この作業も WiVRn repository 側で担当する。Monado 担当と pathname／権限／広告 schema を揃える。
+初期構成は Client と Monado が同じ Pi／同 UID の Linux process。
+Linux 以外の Client target なら現 FFI IPC API が Unsupported になるため、環境を先に確認し不足を報告する。
+
+UDS connection fd を使い `llb_ipc_send(fd,1,&endpoint,timeout_ms)` で Start、kind=2 で Stop。
+fd は借用で caller が所有／close。送受信は shared socket を nonblocking にする。
+Endpoint の host/correlation は Server の広告、address は実接続先の IPv4/IPv6（scope ID を保持）、port は Bridge port。
+同じ host/correlation の重複通知は idempotent、新しい接続は新しい非零 session/correlation を使う。
+切断／handshake failure でも対応する Stop を送る。高頻度 Pose/IMU を UDS に追加しない。
+C ABI v1 は選択済み単一 NIC。Rust EndpointInfo/IPC は複数候補を扱えるが、C receive は複数を Unsupported として拒否する。
+
+Client notification に helper root 権限を与えない。UDS listener は Monado adapter の control worker が所有する。
+実 WiVRn 広告経路の信頼、Bridge TCP の認証／replay protection は未完成。初期実証を限定ネットワークで実施し、本番公開済みとは報告しない。
+
+## Pose と検証
+
+Phase 3 の実証はまず USB transfer／Tracker driver 検出／release/cleanup。
+`llb_publish_pose` の DTO は session/device/origin/frame/clock/semantics/valid flags を保持する。
+実 source timestamp の意味、origin、clock mapping を確定せず、latest history timestamp を measured として送らない。
+`llb_mock_clock` は synthetic fixture 専用。実時刻同期／Monado LLFA 融合は Phase 4 の別作業。
+Mock timestamped pose による runtime adapter 縦断は継続し、実 pose／融合成功とは分けて報告する。
+
+CMake からの build 例:
+
+```sh
+LLB_HEADER_DIR="$PWD/build/bridge-include" cargo build --manifest-path ../LLFA-Link-Light-Bridge/Cargo.toml -p light-bridge-ffi --release --locked
+```
+
+生成 header と `.so`／`.a` を runtime target に接続。必須の前処理は build.rs 内、Python 不要。
+
+提出物:
+
+- opt-in CMake、Server owner、Client 通知、広告互換性、prepare/driver-release barrier の差分。
+- WiVRn と Bridge の commit、実行環境／有効・無効の起動コマンド、無効時 regression。
+- Pi export 後の Host `lsusb -t`／`usbip port`、serial 対応、Lighthouse driver 検出の証拠。
+- 同じ session/correlation の Prepare→ExportReady→Attached→Ready→Stop/Stopped のログ。
+- driver release→自分の port detach→Pi driver 復帰→両 journal 解放の証拠。
+- 接続前 prepare、遅い通知、初期列挙失敗、timeout、Wi-Fi/cable loss、再接続、残留 journal の記録。
+- 実機／権限／不足 API の blocker。Mock で進められる箇所は進め、推測で完了扱いしない。

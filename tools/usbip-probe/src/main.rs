@@ -84,7 +84,9 @@ fn presence(path: impl AsRef<Path>) -> String {
 }
 fn run(selected: Option<(u16, u16)>) -> io::Result<()> {
     println!("READ-ONLY REAL INVENTORY: this is not a USB/IP transfer test.");
-    println!("Bridge transfer backend: Mock only; no bind/attach/detach is performed.\n");
+    println!(
+        "This probe does not select a transfer backend; no bind/attach/detach is performed.\n"
+    );
     println!("USB/IP prerequisites (presence does not prove permissions or working transfer):");
     for name in ["lsusb", "usbip", "usbipd"] {
         let tool = executable(name)

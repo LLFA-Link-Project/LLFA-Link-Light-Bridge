@@ -36,7 +36,7 @@ fn remaining(end: Instant) -> Result<Duration> {
 }
 fn preface(endpoint: &EndpointInfo, lane: u8) -> Vec<u8> {
     let mut b = b"LLBN".to_vec();
-    b.extend(VERSION.to_be_bytes());
+    b.extend(PROTOCOL_VERSION.to_be_bytes());
     b.extend(endpoint.host_id.to_be_bytes());
     b.extend(endpoint.correlation_id.to_be_bytes());
     b.push(lane);
@@ -246,6 +246,7 @@ mod tests {
             session_id: 1,
             operation_id: 1,
             pose: Some(ExternalPose::mock(1, 1, 42)),
+            device: None,
         }
         .encode()
         .unwrap();

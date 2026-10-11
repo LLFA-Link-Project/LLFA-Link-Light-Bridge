@@ -57,7 +57,16 @@ Dependencies must be cached before offline commands; `cargo fetch --locked` prep
 
 - `network-session` is a runtime adapter test harness. Its subprocess roles are not production daemons.
 - Keep TCP control and pose on separate bounded lanes. Bind/accept/connect and UDS notifications run on an adapter control worker, never a pose query thread.
-- The TCP preface matches host/correlation/lane; it does not authenticate peers. Network C APIs retain the `_mock` suffix until a real backend and security contract exist.
+- The TCP preface matches host/correlation/lane; it does not authenticate peers. Generic network C APIs select the explicitly configured kernel backend or default Mock. `_mock` APIs reject kernel configuration. Neither API authenticates remote peers; restrict experiments to an access-controlled network.
 - Remote Mock USB accepts only the exact synthetic identity after UsbExportReady. Never treat remote mock metadata as a real inventory/allowlist/export.
 - Keep UDS directories private and remove only paths created by the owning adapter. After a notification read fails or times out, close the stream; do not restart framing in the middle of a consumed frame.
 - Report runtime stand-in tests separately from building/linking upstream Monado and WiVRn.
+
+## Phase 3 kernel backend
+
+- Use a dedicated cancellable USB worker; never execute helper RPC or CLI operations in control poll or pose queries.
+- Privileged operations go only through the root-owned helper with SO_PEERCRED and exact policy. Keep CLI executable paths and argument forms fixed; never introduce a shell RPC.
+- Persist intent before OS mutation and retain uncertain journals. Never automatically adopt stale resources or infer an owned port from a guessed number. Runtime release, verified Host detach, then HMD unbind remain mandatory.
+- Real backend destroy cancels/joins workers; it does not blindly clean up OS resources. Document residual-resource inspection and incomplete cleanup.
+- Bridge frame/preface version is 2; C ABI and UDS notification version remain 1. Keep identity offer encoding and import policy consistent.
+- Keep `docs/HANDOFF-MONADO.md`, `docs/HANDOFF-WIVRN.md`, and `docs/PHASE-3-REPORT.md` current. Mock/helper engine tests do not establish Phase 3 hardware acceptance.

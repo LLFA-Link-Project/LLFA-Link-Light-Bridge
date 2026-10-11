@@ -76,27 +76,64 @@ typedef struct {
 extern "C" {
 #endif // __cplusplus
 
+/**
+ * Configure exact runtime policy before TCP setup. No privileged action at this point.
+ * UTF-8 socket and JSON policy buffers are borrowed only during this call, each <=4096 bytes.
+ */
+int32_t llb_configure_kernel_usbip(LlbHandle *handle,
+                                   const uint8_t *socket,
+                                   uint32_t socket_len,
+                                   const uint8_t *policy_json,
+                                   uint32_t policy_len,
+                                   uint64_t instance);
+
 int32_t llb_create(const LlbConfig *config, LlbHandle **out);
 
 int32_t llb_mock_link(LlbHandle *hmd, LlbHandle *host);
 
 /**
  * Bind Host before notifying Client. Port 0 is permitted and updated in endpoint.
- * MOCK USB ONLY. No authentication; use trusted test networks.
+ * Uses explicitly configured kernel backend, otherwise Mock. Bridge TCP is not authenticated.
  */
-int32_t llb_tcp_listen_mock(LlbHandle *handle, LlbEndpoint *endpoint);
+int32_t llb_tcp_listen(LlbHandle *handle, LlbEndpoint *endpoint);
 
 /**
  * Blocking deadline-bounded setup on the caller's control thread, never render thread.
  */
-int32_t llb_tcp_accept_mock(LlbHandle *handle);
+int32_t llb_tcp_accept(LlbHandle *handle);
 
 /**
  * Connect HMD using a previously notified endpoint; start is a separate lifecycle event.
  */
+int32_t llb_tcp_connect(LlbHandle *handle, const LlbEndpoint *endpoint);
+
+/**
+ * Compatibility test-only API: reject a configured kernel backend.
+ */
+int32_t llb_tcp_listen_mock(LlbHandle *handle, LlbEndpoint *endpoint);
+
+int32_t llb_tcp_accept_mock(LlbHandle *handle);
+
 int32_t llb_tcp_connect_mock(LlbHandle *handle, const LlbEndpoint *endpoint);
 
 int32_t llb_request_start(LlbHandle *handle, uint64_t session, const LlbEndpoint *endpoint);
+
+/**
+ * Send Start(kind=1) or Stop(kind=2) on an already connected, borrowed UDS fd.
+ * Leaves the shared socket nonblocking. No pose/IMU payload. Linux only.
+ */
+int32_t llb_ipc_send(int32_t fd, uint32_t kind, const LlbEndpoint *endpoint, uint32_t timeout_ms);
+
+/**
+ * Receive notification into an initialized ABI-v1 Endpoint. Stop has family/port=0.
+ * Rejects multi-address Start with Unsupported; ABI v1 accepts one selected NIC only.
+ */
+int32_t llb_ipc_receive(int32_t fd, uint32_t timeout_ms, uint32_t *kind, LlbEndpoint *endpoint);
+
+/**
+ * Apply Start to an already connected HMD, or request Stop after exact host/session checks.
+ */
+int32_t llb_apply_notification(LlbHandle *handle, uint32_t kind, const LlbEndpoint *endpoint);
 
 int32_t llb_request_prepare(LlbHandle *handle);
 
