@@ -99,11 +99,12 @@ impl HostServer {
                     if self.session.state != State::PreparingUsb {
                         return Err(Error::InvalidState);
                     }
-                    let port = self
-                        .usb
-                        .lock()
-                        .map_err(|_| Error::InvalidState)?
-                        .attach(m.session_id, &UsbDeviceIdentity::mock())?;
+                    let port = {
+                        let mut usb = self.usb.lock().map_err(|_| Error::InvalidState)?;
+                        let device = UsbDeviceIdentity::mock();
+                        usb.observe_export_ready(m.session_id, &device)?;
+                        usb.attach(m.session_id, &device)?
+                    };
                     self.port = Some(port);
                     self.transport.send(Kind::UsbAttached, m.session_id, 4)?;
                     self.session.advance(m.session_id, State::UsbAttached)?;
@@ -167,6 +168,10 @@ impl HostServer {
                 .detach(self.session.id, port)?;
             self.port = None;
         }
+        self.usb
+            .lock()
+            .map_err(|_| Error::InvalidState)?
+            .cancel_remote_offer(self.session.id)?;
         self.transport.send(Kind::Stop, self.session.id, 6)
     }
     pub fn needs_runtime_release(&self) -> bool {

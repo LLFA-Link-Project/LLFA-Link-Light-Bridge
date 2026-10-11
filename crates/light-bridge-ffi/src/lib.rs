@@ -1,4 +1,4 @@
-//! C ABI v1, mock-only connection. Callers serialize access and must not reenter callbacks.
+//! C ABI v1, bounded memory/TCP transports with mock-only USB. Callers serialize access and must not reenter callbacks.
 //! # Safety
 //! All non-null pointers must be valid, aligned and point to the documented live objects.
 //! Userdata outlives the handle; callbacks borrow pose for the duration of the call only.
@@ -51,6 +51,7 @@ pub struct Handle {
     callback: Callback,
     userdata: *mut c_void,
     library: Library,
+    listener: Option<(std::net::TcpListener, EndpointInfo)>,
 }
 fn guard(f: impl FnOnce() -> Result<()>) -> i32 {
     match catch_unwind(AssertUnwindSafe(f)) {
@@ -117,6 +118,7 @@ pub unsafe extern "C" fn llb_create(config: *const Config, out: *mut *mut Handle
             callback: c.callback,
             userdata: c.userdata,
             library: Library::Unlinked,
+            listener: None,
         }));
         Ok(())
     })
@@ -133,6 +135,8 @@ pub unsafe extern "C" fn llb_mock_link(hmd: *mut Handle, host: *mut Handle) -> i
             || s.role != 1
             || !matches!(h.library, Library::Unlinked)
             || !matches!(s.library, Library::Unlinked)
+            || h.listener.is_some()
+            || s.listener.is_some()
         {
             return Err(Error::InvalidState);
         }
@@ -140,6 +144,101 @@ pub unsafe extern "C" fn llb_mock_link(hmd: *mut Handle, host: *mut Handle) -> i
         let usb = Arc::new(Mutex::new(MockUsbIp::ready()));
         h.library = Library::Hmd(HmdClient::new(a, usb.clone(), h.timeout));
         s.library = Library::Host(HostServer::new(b, usb, s.timeout));
+        Ok(())
+    })
+}
+unsafe fn endpoint_info(endpoint: *const Endpoint, allow_zero_port: bool) -> Result<EndpointInfo> {
+    if endpoint.is_null()
+        || endpoint.cast::<u32>().read() != std::mem::size_of::<Endpoint>() as u32
+        || endpoint.cast::<u32>().add(1).read() != VERSION
+    {
+        return Err(Error::InvalidArgument);
+    }
+    let e = &*endpoint;
+    if (!allow_zero_port && e.port == 0)
+        || e.port > 65535
+        || e.reserved != 0
+        || e.host_id == 0
+        || e.correlation_id == 0
+    {
+        return Err(Error::InvalidArgument);
+    }
+    let address = match e.family {
+        4 if e.scope_id == 0 && e.address[4..].iter().all(|b| *b == 0) => {
+            std::net::SocketAddr::from((
+                std::net::Ipv4Addr::new(e.address[0], e.address[1], e.address[2], e.address[3]),
+                e.port as u16,
+            ))
+        }
+        6 => std::net::SocketAddr::V6(std::net::SocketAddrV6::new(
+            std::net::Ipv6Addr::from(e.address),
+            e.port as u16,
+            0,
+            e.scope_id,
+        )),
+        _ => return Err(Error::InvalidArgument),
+    };
+    Ok(EndpointInfo {
+        addresses: vec![address],
+        host_id: e.host_id,
+        correlation_id: e.correlation_id,
+    })
+}
+/// Bind Host before notifying Client. Port 0 is permitted and updated in endpoint.
+/// MOCK USB ONLY. No authentication; use trusted test networks.
+#[no_mangle]
+pub unsafe extern "C" fn llb_tcp_listen_mock(handle: *mut Handle, endpoint: *mut Endpoint) -> i32 {
+    guard(|| {
+        let h = handle.as_mut().ok_or(Error::InvalidArgument)?;
+        if h.role != LLB_HOST || !matches!(h.library, Library::Unlinked) || h.listener.is_some() {
+            return Err(Error::InvalidState);
+        }
+        let mut info = endpoint_info(endpoint, true)?;
+        let listener =
+            std::net::TcpListener::bind(info.addresses[0]).map_err(|_| Error::Disconnected)?;
+        info.addresses[0] = listener.local_addr().map_err(|_| Error::Disconnected)?;
+        (*endpoint).port = info.addresses[0].port() as u32;
+        h.listener = Some((listener, info));
+        Ok(())
+    })
+}
+/// Blocking deadline-bounded setup on the caller's control thread, never render thread.
+#[no_mangle]
+pub unsafe extern "C" fn llb_tcp_accept_mock(handle: *mut Handle) -> i32 {
+    guard(|| {
+        let h = handle.as_mut().ok_or(Error::InvalidArgument)?;
+        if h.role != LLB_HOST || !matches!(h.library, Library::Unlinked) {
+            return Err(Error::InvalidState);
+        }
+        let (listener, info) = h.listener.as_ref().ok_or(Error::InvalidState)?;
+        let transport = light_bridge_protocol::network::accept(listener, info, h.timeout)?;
+        h.library = Library::Host(HostServer::new(
+            transport,
+            Arc::new(Mutex::new(MockUsbIp::remote_importer())),
+            h.timeout,
+        ));
+        h.listener = None;
+        Ok(())
+    })
+}
+/// Connect HMD using a previously notified endpoint; start is a separate lifecycle event.
+#[no_mangle]
+pub unsafe extern "C" fn llb_tcp_connect_mock(
+    handle: *mut Handle,
+    endpoint: *const Endpoint,
+) -> i32 {
+    guard(|| {
+        let h = handle.as_mut().ok_or(Error::InvalidArgument)?;
+        if h.role != LLB_HMD || !matches!(h.library, Library::Unlinked) {
+            return Err(Error::InvalidState);
+        }
+        let info = endpoint_info(endpoint, false)?;
+        let transport = light_bridge_protocol::network::connect(&info, h.timeout)?;
+        h.library = Library::Hmd(HmdClient::new(
+            transport,
+            Arc::new(Mutex::new(MockUsbIp::ready())),
+            h.timeout,
+        ));
         Ok(())
     })
 }
@@ -154,44 +253,7 @@ pub unsafe extern "C" fn llb_request_start(
         match &mut h.library {
             Library::Host(v) => v.start(session)?,
             Library::Hmd(v) => {
-                if endpoint.is_null() {
-                    return Err(Error::InvalidArgument);
-                }
-                if endpoint.cast::<u32>().read() != std::mem::size_of::<Endpoint>() as u32
-                    || endpoint.cast::<u32>().add(1).read() != VERSION
-                {
-                    return Err(Error::InvalidArgument);
-                }
-                let e = &*endpoint;
-                if e.port == 0 || e.port > 65535 || e.reserved != 0 {
-                    return Err(Error::InvalidArgument);
-                }
-                let address = match e.family {
-                    4 => std::net::SocketAddr::from((
-                        std::net::Ipv4Addr::new(
-                            e.address[0],
-                            e.address[1],
-                            e.address[2],
-                            e.address[3],
-                        ),
-                        e.port as u16,
-                    )),
-                    6 => std::net::SocketAddr::V6(std::net::SocketAddrV6::new(
-                        std::net::Ipv6Addr::from(e.address),
-                        e.port as u16,
-                        0,
-                        e.scope_id,
-                    )),
-                    _ => return Err(Error::InvalidArgument),
-                };
-                v.start(
-                    session,
-                    &EndpointInfo {
-                        addresses: vec![address],
-                        host_id: e.host_id,
-                        correlation_id: e.correlation_id,
-                    },
-                )?;
+                v.start(session, &endpoint_info(endpoint, false)?)?;
             }
             _ => return Err(Error::InvalidState),
         }

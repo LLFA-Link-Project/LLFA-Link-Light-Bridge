@@ -30,7 +30,7 @@ Rust `EndpointInfo` は候補複数 address を保持できるが、ABI v1 は�
 
 基本順序: create(role) → mock_link(hmd,host) → request_start → request_prepare → poll
 → tracking_ready → publish_pose／poll → request_stop → poll Stopped → destroy。
-Mock link は test-only。同一プロセスで2 role を接続し、別プロセスを結ぶ network API は未実装。
+Mock link は test-only。同一プロセスで2 role を接続し、別プロセスの TCP は下記の明示 Mock API を使用する。
 Host prepare と HMD endpoint/start の順序はどちらが先でもよい。
 Host request_start の endpoint は unused/null 可。HMD は endpoint 必須、correlation=session。
 
@@ -55,3 +55,20 @@ C callback 自体が throw/unwind/longjmp して Rust を越えることは禁�
 worker は5ms recv timeout と bounded processing で退出する。self-join を生む worker callback はない。
 OS scheduling に依存するため hard realtime deadline は保証しない。Mock join の1秒以内終了はテスト済み。
 Mock destructor の USB cleanup は実 OS crash recovery の保証ではない。
+
+## Phase 2 TCP 接続 API（USB は Mock）
+
+Host: create → `llb_tcp_listen_mock(host, &endpoint)` → Client に endpoint を通知 →
+control worker で `llb_tcp_accept_mock(host)` → request_start → request_prepare。
+HMD: create → 通知を受信 → control worker で `llb_tcp_connect_mock(hmd, &endpoint)` → request_start。
+accept と connect は同時に実行し、各 handle の timeout_ms を設定期限に使う。
+listen の endpoint は入出力で、port=0 を指定すると割り当てた port に更新する。
+role 不一致／既に接続済みは InvalidState。accept 失敗時は listener を保持して再試行できる。
+成功後は listener を閉じる。接続断から新しい socket に接続する際は handle を destroy/create する。
+正常 stop 後の同一接続上の新 session は既存 handle/pose worker を再利用する。
+
+listen は指定した単一 IPv4/IPv6 address に bind。IPv4 は scope=0／末尾12 bytes=0 が必要。
+preface の host/correlation を照合するが認証はしない。これら API は Mock USB backend を構築し、
+現実の Tracker は操作しない。Host/HMD の Mock ledger は独立、ExportReady により固定 synthetic identity のみ許可。
+UDS notification API は現在 Rust protocol module にあり C ABI は未提供。
+`tests/ffi/run.sh` は従来 smoke と TCP smoke をそれぞれ shared/static で実行する。

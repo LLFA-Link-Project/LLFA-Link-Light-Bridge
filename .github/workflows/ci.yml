@@ -14,3 +14,4 @@ jobs:
       - run: cargo test --workspace --locked --offline
       - run: bash tests/ffi/run.sh
       - run: cargo run -p mock-session --offline
+      - run: cargo run -p network-session --locked --offline -- --processes

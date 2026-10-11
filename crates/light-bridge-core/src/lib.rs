@@ -17,6 +17,7 @@ pub enum Error {
     UnsupportedExportGranularity,
     DeviceDenied,
     AmbiguousDevice,
+    Inventory,
     UsbExport,
     UsbAttach,
     Enumeration,

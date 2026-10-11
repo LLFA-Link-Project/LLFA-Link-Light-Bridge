@@ -31,3 +31,16 @@
 
 仕様の同一プロセス構成、arpara HMD default deny、WholeDevice 制約、runtime release → detach → unexport は維持。
 Phase 2/3/4 相当の実統合、OS USB、時計推定／融合を完成扱いしない。
+
+## Phase 2 の更新（上記 Phase 1 判断を部分的に置き換える）
+
+- 外部 runtime 依存を増やさず std TCP/UDS を追加。制御／pose を独立 socket にし、
+  bounded queues、partial I/O、設定 deadline、cancel/join を実装。
+- Rust endpoint 通知は複数 NIC／IPv6 scope を維持。C Endpoint ABI は単一候補のまま、既存 layout は変更しない。
+- Host/HMD の Mock 台帳を分離。Host は現在 session の UsbExportReady を受信した場合だけ
+  固定 MOCK-TRACKER の mock offer を記録する。実 inventory／device offer／USB authorization ではない。
+- test subprocess は runtime stand-in であり、本番 daemon に構成変更しない。
+- 実ソースは存在するが upstream adapter の組み込み・build はまだ未完了。
+  Mock adapter の成功を runtime 統合や無効時 WiVRn 起動回帰の証拠にしない。
+- read-only SysfsInventory／usbip-probe は Phase 0 の診断改善。Phase 3 の USB 操作を先行実装したとは扱わない。
+- 認証・暗号化・広告の信頼契約は未実装。TCP C API は `_mock` を明示し、本番 listener と扱わない。

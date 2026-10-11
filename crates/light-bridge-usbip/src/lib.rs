@@ -1,6 +1,7 @@
-//! No OS USB operations in Phase 1. Inventory, planning and ownership are independent.
+//! Mock USB/IP transfer and read-only Linux inventory. No OS USB resources are changed.
+pub mod inventory;
 use light_bridge_core::{Error, Result};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsbDeviceIdentity {
     pub vid: u16,
@@ -79,6 +80,8 @@ pub struct MockUsbIp {
     exports: BTreeMap<u64, UsbDeviceIdentity>,
     ports: BTreeMap<u32, u64>,
     next_port: u32,
+    remote_mock: bool,
+    remote_offers: BTreeSet<u64>,
 }
 impl MockUsbIp {
     pub fn ready() -> Self {
@@ -87,6 +90,36 @@ impl MockUsbIp {
             inventory: vec![UsbDeviceIdentity::mock()],
             ..Self::default()
         }
+    }
+    /// Independent Host-side mock ledger. Only the fixed synthetic tracker is accepted.
+    pub fn remote_importer() -> Self {
+        Self {
+            remote_mock: true,
+            ..Self::ready()
+        }
+    }
+    /// Called only after the current session's UsbExportReady protocol message.
+    /// This records mock metadata, never an OS export or authorization for real USB.
+    pub fn observe_export_ready(&mut self, session: u64, device: &UsbDeviceIdentity) -> Result<()> {
+        if !self.remote_mock {
+            return Ok(());
+        }
+        if session == 0 || device != &UsbDeviceIdentity::mock() {
+            return Err(Error::DeviceDenied);
+        }
+        if self.remote_offers.iter().any(|owner| *owner != session) {
+            return Err(Error::Ownership);
+        }
+        self.remote_offers.insert(session);
+        Ok(())
+    }
+    /// Clear a failed remote mock attach offer after runtime release; no HMD export operation.
+    pub fn cancel_remote_offer(&mut self, session: u64) -> Result<()> {
+        if self.ports.values().any(|owner| *owner == session) {
+            return Err(Error::Ownership);
+        }
+        self.remote_offers.remove(&session);
+        Ok(())
     }
     pub fn resource_count(&self) -> usize {
         self.exports.len() + self.ports.len()
@@ -123,7 +156,11 @@ impl UsbTransferBackend for MockUsbIp {
         Ok(())
     }
     fn attach(&mut self, s: u64, d: &UsbDeviceIdentity) -> Result<u32> {
-        if self.exports.get(&s) != Some(d) {
+        if self.exports.get(&s) != Some(d)
+            && !(self.remote_mock
+                && self.remote_offers.contains(&s)
+                && d == &UsbDeviceIdentity::mock())
+        {
             return Err(Error::Ownership);
         }
         if self.fail_attach {
@@ -143,6 +180,7 @@ impl UsbTransferBackend for MockUsbIp {
         match self.ports.get(&p) {
             Some(owner) if *owner == s => {
                 self.ports.remove(&p);
+                self.remote_offers.remove(&s);
                 Ok(())
             }
             _ => Err(Error::Ownership),
@@ -152,6 +190,7 @@ impl UsbTransferBackend for MockUsbIp {
         if self.ports.values().any(|owner| *owner == s) {
             return Err(Error::Ownership);
         }
+        self.remote_offers.remove(&s);
         self.exports.remove(&s);
         Ok(())
     }
@@ -186,6 +225,24 @@ mod tests {
             planner.plan(&b, &ExportTarget::WholeDevice(d)),
             Err(Error::AmbiguousDevice)
         );
+    }
+    #[test]
+    fn remote_mock_requires_export_ready_and_denies_real_devices() {
+        let mut b = MockUsbIp::remote_importer();
+        let d = UsbDeviceIdentity::mock();
+        assert_eq!(b.attach(1, &d), Err(Error::Ownership));
+        let mut real = d.clone();
+        real.vid = 0x2c30;
+        real.pid = 0x1050;
+        assert_eq!(b.observe_export_ready(1, &real), Err(Error::DeviceDenied));
+        assert_eq!(b.observe_export_ready(0, &d), Err(Error::DeviceDenied));
+        b.observe_export_ready(1, &d).unwrap();
+        assert_eq!(b.attach(2, &d), Err(Error::Ownership));
+        let p = b.attach(1, &d).unwrap();
+        assert_eq!(b.detach(2, p), Err(Error::Ownership));
+        b.detach(1, p).unwrap();
+        assert_eq!(b.attach(1, &d), Err(Error::Ownership));
+        assert_eq!(b.resource_count(), 0);
     }
     #[test]
     fn ownership_failures_cleanup() {

@@ -80,6 +80,22 @@ int32_t llb_create(const LlbConfig *config, LlbHandle **out);
 
 int32_t llb_mock_link(LlbHandle *hmd, LlbHandle *host);
 
+/**
+ * Bind Host before notifying Client. Port 0 is permitted and updated in endpoint.
+ * MOCK USB ONLY. No authentication; use trusted test networks.
+ */
+int32_t llb_tcp_listen_mock(LlbHandle *handle, LlbEndpoint *endpoint);
+
+/**
+ * Blocking deadline-bounded setup on the caller's control thread, never render thread.
+ */
+int32_t llb_tcp_accept_mock(LlbHandle *handle);
+
+/**
+ * Connect HMD using a previously notified endpoint; start is a separate lifecycle event.
+ */
+int32_t llb_tcp_connect_mock(LlbHandle *handle, const LlbEndpoint *endpoint);
+
 int32_t llb_request_start(LlbHandle *handle, uint64_t session, const LlbEndpoint *endpoint);
 
 int32_t llb_request_prepare(LlbHandle *handle);

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "tools/mock-session"]
+members = ["crates/*", "tools/mock-session", "tools/usbip-probe", "tools/network-session"]
 
 [workspace.package]
 version = "0.1.0"

@@ -1,4 +1,7 @@
-//! Versioned framed transport. Phase 1 transport is bounded in-memory, not a TCP listener.
+//! Versioned frames with bounded in-memory and two-lane TCP transports.
+#[cfg(unix)]
+pub mod ipc;
+pub mod network;
 use light_bridge_core::{Error, ExternalPose, Result, VERSION};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::time::Duration;
@@ -151,11 +154,9 @@ struct Reader<'a> {
 }
 impl<'a> Reader<'a> {
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
-        let v = self
-            .bytes
-            .get(self.pos..self.pos + n)
-            .ok_or(Error::Protocol)?;
-        self.pos += n;
+        let end = self.pos.checked_add(n).ok_or(Error::Protocol)?;
+        let v = self.bytes.get(self.pos..end).ok_or(Error::Protocol)?;
+        self.pos = end;
         Ok(v)
     }
     fn u32(&mut self) -> Result<u32> {
@@ -170,6 +171,7 @@ impl<'a> Reader<'a> {
     }
 }
 pub struct Transport {
+    network: Option<network::Workers>,
     control_tx: SyncSender<Vec<u8>>,
     control_rx: Receiver<Vec<u8>>,
     pub pose_tx: SyncSender<Vec<u8>>,
@@ -182,12 +184,14 @@ pub fn mock_pair() -> (Transport, Transport) {
     let (g, h) = mpsc::sync_channel(QUEUE_CAPACITY);
     (
         Transport {
+            network: None,
             control_tx: a,
             control_rx: d,
             pose_tx: e,
             pose_rx: Some(h),
         },
         Transport {
+            network: None,
             control_tx: c,
             control_rx: b,
             pose_tx: g,
@@ -231,6 +235,37 @@ impl Transport {
         )
     }
 }
+/// Complete a small setup/notification buffer under one absolute deadline.
+/// Stream must be nonblocking; this runs only on an adapter control worker.
+pub(crate) fn transfer<S: std::io::Read + std::io::Write>(
+    stream: &mut S,
+    bytes: &mut [u8],
+    write: bool,
+    end: std::time::Instant,
+) -> Result<()> {
+    let mut offset = 0;
+    while offset < bytes.len() {
+        if std::time::Instant::now() >= end {
+            return Err(Error::Timeout);
+        }
+        let result = if write {
+            stream.write(&bytes[offset..])
+        } else {
+            stream.read(&mut bytes[offset..])
+        };
+        match result {
+            Ok(0) => return Err(Error::Disconnected),
+            Ok(n) => offset += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(1))
+            }
+            Err(_) => return Err(Error::Disconnected),
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

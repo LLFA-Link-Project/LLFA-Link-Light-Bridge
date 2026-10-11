@@ -44,6 +44,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 cargo test --workspace --locked --offline
 bash tests/ffi/run.sh
+cargo run -p network-session --locked --offline -- --processes
 ```
 
 Dependencies must be cached before offline commands; `cargo fetch --locked` prepares them. An alternate writable `CARGO_HOME` may be used locally when required by environment permissions.
@@ -51,3 +52,12 @@ Dependencies must be cached before offline commands; `cargo fetch --locked` prep
 - Include meaningful failure/cleanup coverage for lifecycle, ownership, protocol, or FFI changes. Rust tests check the generated header snapshot; C smoke tests verify the actual ABI.
 - Report native versus arm64 validation, mock versus hardware behavior, runtime linking versus source inspection, and remaining blockers separately.
 - Do not include build outputs, credentials, or unrelated files in commits. Follow the user's requested commit identity; do not change global Git settings.
+
+## Phase 2 mock transport
+
+- `network-session` is a runtime adapter test harness. Its subprocess roles are not production daemons.
+- Keep TCP control and pose on separate bounded lanes. Bind/accept/connect and UDS notifications run on an adapter control worker, never a pose query thread.
+- The TCP preface matches host/correlation/lane; it does not authenticate peers. Network C APIs retain the `_mock` suffix until a real backend and security contract exist.
+- Remote Mock USB accepts only the exact synthetic identity after UsbExportReady. Never treat remote mock metadata as a real inventory/allowlist/export.
+- Keep UDS directories private and remove only paths created by the owning adapter. After a notification read fails or times out, close the stream; do not restart framing in the middle of a consumed frame.
+- Report runtime stand-in tests separately from building/linking upstream Monado and WiVRn.

@@ -1,0 +1,38 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling light-bridge-usbip v0.1.0 (/home/reina/LLFA-Link-Light-Bridge/crates/light-bridge-usbip)
+   Compiling usbip-probe v0.1.0 (/home/reina/LLFA-Link-Light-Bridge/tools/usbip-probe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running `target/debug/usbip-probe --device '28de:2300'`
+READ-ONLY REAL INVENTORY: this is not a USB/IP transfer test.
+Bridge transfer backend: Mock only; no bind/attach/detach is performed.
+
+USB/IP prerequisites (presence does not prove permissions or working transfer):
+  lsusb: /usr/bin/lsusb
+  usbip: not found in PATH
+  usbipd: not found in PATH
+  loaded module usbip_host: absent
+  loaded module vhci_hcd: absent
+  /dev/bus/usb: absent (visibility only; device open not tested)
+  kernel: 7.2.9-arch1-1
+  module file usbip-host: /usr/lib/modules/7.2.9-arch1-1/kernel/drivers/usb/usbip/usbip-host.ko.zst
+  module file vhci-hcd: /usr/lib/modules/7.2.9-arch1-1/kernel/drivers/usb/usbip/vhci-hcd.ko.zst
+
+USB devices (root hubs omitted):
+  28de:2300 Tundra Tracker
+    busid=1-3.3 serial="LHR-CEC1027F"
+    sysfs_path=/sys/devices/pci0000:00/0000:00:01.2/0000:01:00.0/usb1/1-3/1-3.3
+    topology=bus1/port3.3 interfaces=3
+    device_driver=usb
+    transport evidence: no vhci_hcd ancestor; locally enumerated USB
+    export policy: not authorized by this probe; explicit identity allowlist required
+    1-3.3:1.0 number=0 driver=usbhid
+    1-3.3:1.1 number=1 driver=usbhid
+    1-3.3:1.2 number=2 driver=usbhid
+
+Matched devices: 1
+Compare in your terminal: lsusb; lsusb -t; usb-devices
+Filter: lsusb -d 28de:2300
+With usbip installed: usbip port (read-only imported-port list).
+A successful mock-session leaves OS USB enumeration unchanged.

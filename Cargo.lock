@@ -178,6 +178,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "network-session"
+version = "0.1.0"
+dependencies = [
+ "light-bridge-core",
+ "light-bridge-hmd",
+ "light-bridge-host",
+ "light-bridge-protocol",
+ "light-bridge-usbip",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -351,6 +362,13 @@ name = "unicode-ident"
 version = "1.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d245f478577f809a851594d02313b640fb437e0bb33866753cff937863096954"
+
+[[package]]
+name = "usbip-probe"
+version = "0.1.0"
+dependencies = [
+ "light-bridge-usbip",
+]
 
 [[package]]
 name = "wasip2"

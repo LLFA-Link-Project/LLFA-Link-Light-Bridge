@@ -1,0 +1,13 @@
+[package]
+name = "network-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+light-bridge-core.workspace = true
+light-bridge-protocol.workspace = true
+light-bridge-usbip.workspace = true
+light-bridge-hmd.workspace = true
+light-bridge-host.workspace = true

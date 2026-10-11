@@ -1,4 +1,5 @@
 fn main() {
+    println!("MOCK ONLY: synthetic USB/pose; no kernel USB/IP attach and no lsusb changes.");
     let mut runtime = mock_session::MockRuntime::default();
     runtime.connect(1, true).expect("mock preparation");
     let pose = runtime.pose(1).expect("mock reference pose");

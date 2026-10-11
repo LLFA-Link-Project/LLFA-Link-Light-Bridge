@@ -1,6 +1,6 @@
 # LLFA-Link-Light-Bridge
 
-実装指示書 v0.3.1 に基づく Phase 0 調査・Phase 1 Mock skeleton。
+実装指示書 v0.3.1 に基づく Phase 0/1 と、Phase 2 の実 UDS/TCP・Mock 縦断実装。
 Monado 内の `light-bridge-hmd` と WiVRn Server 内の `light-bridge-host` を主動作核とする。
 既存 WiVRn／Monado のツリーは変更していない。daemon は作成していない。
 
@@ -17,6 +17,8 @@ cargo clippy --workspace --all-targets --offline -- -D warnings
 cargo test --workspace --offline
 bash tests/ffi/run.sh
 cargo run -p mock-session --offline
+cargo run -p network-session --locked --offline -- --processes
+cargo run -p usbip-probe --locked --offline -- --device 28de:2300
 ```
 
 `mock-session` は同一テストプロセスで Mock Host／HMD を動かす headless harness。
@@ -37,23 +39,29 @@ LLB_HEADER_DIR="$PWD/target/ffi-include" cargo build -p light-bridge-ffi --locke
 | 場所 | 責務 |
 |---|---|
 | `crates/light-bridge-core` | 状態機械、EndpointInfo、姿勢 DTO／検証、明示 clock mapping、IMU 拡張 stub |
-| `crates/light-bridge-protocol` | versioned binary frame と bounded Mock transport |
+| `crates/light-bridge-protocol` | versioned binary frame、bounded Mock／2-lane TCP transport、UDS 通知 |
 | `crates/light-bridge-usbip` | inventory／planner／backend trait、Mock ownership ledger／故障注入 |
 | `crates/light-bridge-hmd` | HMD library、export 制御、専用 pose receiver worker／最新参照姿勢 |
 | `crates/light-bridge-host` | Host library、prepare／attach／tracking ready／publish／detach |
 | `crates/light-bridge-ffi` | 共通 C ABI、role 別 opaque handle、staticlib／cdylib |
 | `adapters/*/mock_adapter.h` | 実 runtime に依存しない C adapter stand-in |
-| `tools/mock-session` | Mock 縦断テスト・headless 実行ツール |
+| `tools/mock-session` | in-memory Mock 縦断テスト |
+| `tools/network-session` | 実 UDS/TCP・独立 Mock USB・別プロセス runtime stand-in 試験 |
+| `tools/usbip-probe` | sysfs inventory／USB/IP 前提条件の read-only 診断 |
 
 ## 現段階の範囲
 
-ネットワークは frame を encode/decode する **in-memory bounded transport**。
-TCP/UDP、UDS 通知、認証、実 kernel USB/IP backend、特権 helper、実 runtime へのリンク、
-時刻同期の offset/drift 推定、融合／較正適用、Orange Pi arm64 検証は未実装／未検証。
-`llb_mock_link` は実配置で使用できる接続方式ではない。Mock は OS USB を一切操作しない。
+in-memory bounded transport と、実 TCP（制御／Pose 独立 socket）、実 UDS Start/Stop 通知を実装。
+`network-session --processes` は Client→HMD 通知、Host→HMD→Mock Monado reference、stop を
+別プロセスで試験する。USB と runtime adapters／clock／pose source は Mock のまま。
+C ABI の `llb_tcp_*_mock` も別プロセスに接続できるが、認証・本番 runtime 統合は未完了。
+実 kernel USB/IP backend、特権 helper、実 Monado／WiVRn へのリンク、時刻同期の offset/drift 推定、
+融合／較正適用、Orange Pi arm64 検証は未実装／未検証。
+`llb_mock_link` は同一プロセスの test-only 接続。Mock は OS USB を一切操作しない。
+`usbip-probe` は read-only inventory。成功しても USB/IP attach されたことを意味しない。
 BSB は None/DirectUsb/UsbMon の拡張型のみ。DirectUsb と UsbMon は Unsupported を返す。
 
-[Phase 0/1 報告](docs/PHASE-0-1-REPORT.md)、[統合調査](docs/INTEGRATION-NOTES.md)、
+[Phase 0/1 報告](docs/PHASE-0-1-REPORT.md)、[Phase 2 実装・未完了事項](docs/PHASE-2-REPORT.md)、[統合調査](docs/INTEGRATION-NOTES.md)、
 [USB/IP 調査](docs/USBIP-RESEARCH.md)、[仕様との差分](docs/DECISIONS.md)、
 [protocol](docs/PROTOCOL.md)、[ABI](docs/FFI-ABI.md)、[時計](docs/CLOCK-SYNC.md)、
 [テスト範囲](docs/TEST-PLAN.md) を参照。
