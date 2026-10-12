@@ -1,5 +1,25 @@
 # Monado 担当 Codex への LLFA Bridge 組み込み指示書
 
+## 引き継ぎの基準：既存統合への差分実装
+
+確認済み baseline は **Monado 06dd3c29f、Bridge submodule d765f16**。
+この adapter を新規作成する指示ではない。実 checkout／自プロジェクトの
+`doc/arpara-light-bridge.md` と `doc/arpara-yaw-fusion.md` を正として、以下の差分を適用する。
+ここでの確認はソース確認であり、Orange Pi／実 USB/IP の成功を意味しない。
+
+| 既存の実装 | 自動準備に必要な変更 |
+| --- | --- |
+| target_llfa_bridge.cpp の UDS listener／control worker／Start/Stop | 双方向 bootstrap を追加し、auto mode は policy 未確定でも listener を生成 |
+| create_handle の kernel configuration、Start 前の helper preflight | 確定した SessionUsbPlan から設定し、Commit 前に互換性／準備状態を確認 |
+| callback の raw pose コピー、poll 後の mapped timing／quality 検査 | 再利用。timing IDs の入力を bootstrap 契約から取得する方式へ変更 |
+| stop／Idle／cleanup 確認後の handle 再生成、残留資源の拒否 | 再利用し、追加する environment lease の解放を USB 解放後に接続 |
+| arpara IMU／描画、既定 OFF の実験的 yaw correction | 再利用。bootstrap 作業で再実装・較正完了扱いにしない |
+
+SDK に新しい bootstrap codec／helper 操作が入ってから既存 adapter へ接続する。
+SDK にない関数を既存 API として呼ばない。既存の manual-policy 試験と Bridge OFF 回帰を維持し、
+auto mode の新試験を追加する。下記 Phase 4／Phase 3 部分は既存契約と検証条件であり、
+すでに実装された機能をもう一度作る作業一覧ではない。
+
 ## WiVRn 接続連動の自動準備（最新要求、設計・未実装）
 
 [AUTOMATIC-BOOTSTRAP-DESIGN.md](AUTOMATIC-BOOTSTRAP-DESIGN.md) を次の実装契約にする。
@@ -18,30 +38,30 @@ Commit 前の USB mutation は禁止。現行 Policy equality を緩めず、許
 UI のない Monado は launcher に構造化した診断を渡す。
 SDK／CLI の handshake と一時起動は本版で追加。installer と選択 UI は未実装。
 [一時利用手順](TEMPORARY-HELPER.md) に従って、まず開発者が CLI で起動する。
-Monado `978e79022` の `target_llfa_bridge.cpp:84` の kernel 設定成功後、`:333` の TCP 接続より前に
-control/setup worker で `llb_check_kernel_usbip(handle)` を追加する。失敗なら Start 試行を中断して診断する。
-更新確認: Monado 06dd3c29f で Start worker の新 preflight が実装され、submodule は d765f16。
+Monado 06dd3c29f では Start worker に `llb_check_kernel_usbip(handle)` が追加済み。
+TCP 接続／session 適用前に失敗を診断し、その Start を中断する動作を再利用する。
 SDK／helper／Monado は同じ版を使用し、root RPC v1 と混在させない。
 USB 操作前の判定と既存 cleanup barrier を維持する。CLI 停止は通常 cleanup 完了後、runtime user が明示要求する。
 
 ## 目的と前提
 
 `LLFA-Link-Light-Bridge-IMPLEMENTATION-INSTRUCTIONS-v0.3.1.md` に沿って、
-Orange Pi の **Monado プロセス内**に Bridge HMD library を組み込む。
+Orange Pi の **Monado プロセス内**に組み込まれた Bridge HMD library を維持して拡張する。
 Tracker USB は Host に転送し、arpara HMD USB／ローカル IMU は Monado に残す。
 本書を含む Bridge commit を `git rev-parse HEAD` で記録し、WiVRn 担当と同じ commit を使用する。
 
 現在の成果は Phase 3 Backend/helper と Phase 4 ClockSync／時刻 API のコードと Mock／故障試験。
-実 USB/IP、Orange Pi arm64、現行 Phase 4 API の runtime linking、実機での時刻同期精度、LLFA 融合は未検証。
+Monado 側の native adapter 統合、live timing 受信、opt-in yaw correction は実装済み。
+実 USB/IP、Orange Pi arm64、実機での時刻同期精度、物理環境での yaw 補正効果は未検証。
 現 PC にだけ `28de:2300` Tracker があり、本番 Pi はまだ使っていない。
 Phase 3 の実機合格条件は後述の証拠が揃うまで未達として扱う。
 BSB 対応は追加しない。
 
 最初にこのプロジェクトと Bridge の AGENTS.md、Bridge README、
 `docs/USBIP-BACKEND.md`、`docs/FFI-ABI.md`、`docs/PROTOCOL.md` を読む。
-ここに挙げる新しい runtime 設定／adapter は実装対象であり、既存関数として扱わない。
+既存 adapter／API と新 bootstrap の設計上の候補を区別する。現在の source にある機能は再利用する。
 
-## Phase 4 更新の引き継ぎ
+## Phase 4 の実装済み契約・回帰確認
 
 両担当の Phase 3 組み込み報告を受け、Bridge に live timing API を追加した。
 **両 submodule を本書を含む同じ新 commit に更新する。wire v3 と旧 v2 は接続互換がない。**
@@ -53,7 +73,8 @@ quality limits を共有し、CLOCK_MONOTONIC ns の domain を実環境で確�
 数値IDはsession内の契約。Mockの固定device=1/clock=1への合わせ込みで実poseを通さない。
 Host/Pi の時計 epoch は別。poll/heartbeat を継続し、USB準備中もClockSyncに応答する。
 
-Monado の未コミット `target_llfa_bridge.cpp`／`doc/arpara-light-bridge.md` は前版APIの状態なので再確認する。
+`target_llfa_bridge.cpp`／`doc/arpara-light-bridge.md` は 978e79022 で統合され、
+06dd3c29f で helper preflight が追加済み。以下はその実装の維持条件。
 
 1. production factory が kernel backend に加えて live timing を設定する。Mock clock はtest factoryだけ。
 2. callbackでraw Poseをコピー。poll復帰後に `llb_get_reference_timing` を取得し session/sequence を照合。
@@ -106,7 +127,7 @@ Monado checkout: `/home/reina/monado`、調査 HEAD `ad7610a5561325a9b368cda5d45
 - `src/xrt/targets/common/target_builder_llfa.c:82`: arpara HMD 初期化。
 - 同 `:102`: `survive_get_tracker_devices` によるローカル Tracker open。
 - `src/xrt/targets/common/target_llfa.c:87`: `multi_create_tracking_override` の DIRECT override。
-- `src/xrt/targets/common/target_llfa.h`: 既存 helper API。Phase 3開始時はBridge sinkが未存在。現在の未コミットadapterはreference mailboxを持つ。
+- `src/xrt/targets/common/target_llfa.h`: 既存 LLFA API。統合済み target_llfa_bridge adapter は reference mailbox を持つ。
 - `src/xrt/drivers/arpara/arpara_hmd.cpp`: 独立した HID reader／IMU 3DoF／shutdown join。
 - mount の契約は既存 `doc/arpara-llfa-link.md` と Bridge `docs/INTEGRATION-NOTES.md` を再確認する。
 

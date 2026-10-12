@@ -1,5 +1,25 @@
 # WiVRn 担当 Codex への LLFA Bridge 組み込み指示書
 
+## 引き継ぎの基準：既存統合への差分実装
+
+確認済み baseline は **WiVRn b89ffb72、Bridge submodule d765f16**。
+新規 adapter を一から作る指示ではない。実 checkout と自プロジェクトの
+`docs/light-bridge.md` を正として、以下の差分を適用する。
+ここでの確認はソース確認であり、Orange Pi／実 USB/IP の成功を意味しない。
+
+| 既存の実装 | 自動準備に必要な変更 |
+| --- | --- |
+| Client の getpeername による Host IP 取得、endpoint packet、UDS sender | 再利用し、双方 local/peer 取得と双方向 bootstrap／inventory/endpoint 交換を追加 |
+| target_instance_wivrn の policy読込→Host生成→広告→wait_usb | 先に BootstrapRequest を送る。Offer で session policy 確定後に Host 設定／preflight／広告 |
+| light_bridge_host の互換性 preflight、専用 worker、prepare/Ready 管理 | 再利用。helper の environment preparation と双方 Prepared/Commit を前置 |
+| wivrn_session の最新 Lighthouse history publisher と終了時 join | 再利用。選択 serial と timing IDs を自動準備結果から取得 |
+| driver release→detach と fresh Server child 再接続 | 再利用。追加の daemon／network lease を USB 解放後に回収 |
+| opt-in protocol negotiation／Bridge OFF の従来接続 | 再利用し、bootstrap の新 capability と版拒否・無効時回帰を追加 |
+
+SDK の次版 bootstrap／helper API に依存する部分を区別し、候補関数名を存在する API と扱わない。
+既存の manual-policy／Mock／Lighthouse publisher 試験を維持して自動準備試験を追加する。
+下記 Phase 4／Phase 3 部分は既存契約と検証条件であり、再実装の作業一覧ではない。
+
 ## WiVRn 接続連動の自動準備（最新要求、設計・未実装）
 
 [AUTOMATIC-BOOTSTRAP-DESIGN.md](AUTOMATIC-BOOTSTRAP-DESIGN.md) を次の実装契約にする。
@@ -19,26 +39,26 @@ extension packet／UDS codec／次版 helper bootstrap SDK は新規実装が必
 Dashboard／launcher が選択と診断を扱い、Server の pose 経路で対話や管理者コマンドを実行しない。
 SDK／CLI の handshake と一時起動は本版で追加。installer と選択 UI は未実装。
 [一時利用手順](TEMPORARY-HELPER.md) に従って、まず開発者が CLI で起動する。
-WiVRn `16bd3529` の `server/light_bridge_host.cpp:45` の kernel 設定成功後、`:50` の listener 作成より前に
-setup worker で `llb_check_kernel_usbip(handle)` を追加する。失敗なら広告／tracking 初期化を中断して診断する。
-更新確認: WiVRn b89ffb72 で listener 作成前の新 preflight が実装され、submodule は d765f16。
+WiVRn b89ffb72 は `server/light_bridge_host.cpp` に listener 作成前の新 preflight を実装済み。
+失敗時に広告／tracking 初期化を中断して診断する動作を再利用する。
 SDK／helper／WiVRn は同じ版を使用し、root RPC v1 と混在させない。
 Dashboard の管理者認証は後続。CLI 停止は通常 cleanup 完了後、runtime user が明示要求する。
 
 ## 目的と前提
 
 `LLFA-Link-Light-Bridge-IMPLEMENTATION-INSTRUCTIONS-v0.3.1.md` に沿って、
-**WiVRn Server プロセス内**に Bridge Host library、HMD 側 WiVRn Client に endpoint 通知 adapter を組み込む。
+**WiVRn Server プロセス内**の Bridge Host library と HMD 側 WiVRn Client の通知 adapter を維持して拡張する。
 Tracker は Pi の USB/IP export を Host の vhci_hcd に import し、Lighthouse driver 初期列挙より前に準備を終える。
 Bridge を別の主動作 daemon に移さない。特権 helper／標準 usbipd は別プロセスでよい。
 BSB は追加しない。
 
 本書を含む Bridge commit を記録し、Monado 担当と同じ commit を使う。
-現在は PC の Tracker のみ。Phase 3 と Phase 4 ClockSync の code／Mock／故障試験はあるが、実転送・Orange Pi・現行 API の runtime linking は未検証。
+native runtime 統合、timed Lighthouse publisher、ClockSync、helper preflight は実装済み。
+実転送・Orange Pi・別マシン間の同期精度・物理環境の補正効果は未検証。
 実機成功や Phase 3 合格は、後述の観測が揃うまで主張しない。
 最初に両 repository の AGENTS.md、Bridge README、`docs/USBIP-BACKEND.md`、`docs/FFI-ABI.md`、`docs/PROTOCOL.md` を読む。
 
-## Phase 4 更新の引き継ぎ
+## Phase 4 の実装済み契約・回帰確認
 
 両担当の Phase 3 組み込み報告を受け、Bridge に live timing API を追加した。
 **両 submodule を本書を含む同じ新 commit に更新する。wire v3 と旧 v2 は接続互換がない。**
@@ -50,10 +70,10 @@ quality limits を共有し、CLOCK_MONOTONIC ns の domain を実環境で確�
 数値IDはsession内の契約。Mockの固定device=1/clock=1への合わせ込みで実poseを通さない。
 Host/Pi の時計 epoch は別。poll/heartbeat を継続し、USB準備中もClockSyncに応答する。
 
-調査HEAD `4cf2c7819e3e418f8ec29b38ea741f2ac7c6c1bb` の `server/light_bridge_host.cpp` は
-`publish_reference` を持つが、実Lighthouse sourceとはまだ接続されていない。
-実sourceは `build-dashboard/_deps/monado-src/src/xrt/drivers/steamvr_lh/device.cpp` の
-get_latest_pose(:824)／history push(:1279) を調査済み。ビルド生成treeの変更はpatch sourceへ反映する。
+WiVRn 16bd3529 で実 Lighthouse source の publisher が接続済み。
+現在の `server/driver/wivrn_session.cpp` は選択デバイスの `steamvr_lh_get_latest_pose` を worker で読み、
+元の history timestamp を publish し、device 解放前に join する。この経路を再利用する。
+ドライバ変更は既存 `patches/monado` に反映し、build 生成 tree の直接変更だけで済ませない。
 
 1. Host factoryで live TimingConfig を設定する。pollがClockRequestに応答する。
 2. 選択serialの `steamvr_lh_get_latest_pose` からrelationとtimestampを対で取得し、

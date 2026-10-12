@@ -94,6 +94,8 @@ Dependencies must be cached before offline commands; `cargo fetch --locked` prep
 
 ## Connection-driven automatic setup (design, not implemented)
 
+- Monado/WiVRn already contain runtime adapters, timing, pose delivery and helper preflight. Write handoffs as changes to an inspected checkout baseline, distinguish reused/modified/new work, and remove stale claims that integrated hooks are missing.
+
 - Follow docs/AUTOMATIC-BOOTSTRAP-DESIGN.md for the next implementation. Default opt-in auto mode must derive/exchange addresses from the WiVRn connection and resolve exact Tracker identity without manual IP/policy/busid/timing-ID entry.
 - Bootstrap precedes Lighthouse and stream readiness. Create the Monado listener before resolving policy; exchange Prepare/Offer/Commit and require both sides prepared before USB mutation.
 - Automatically select one supported, authorized candidate; require selection for ambiguity and always deny the HMD. Keep root authorization limits separate from immutable per-session exact policy.
