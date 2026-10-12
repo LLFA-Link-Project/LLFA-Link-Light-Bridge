@@ -1,5 +1,64 @@
 # WiVRn 担当 Codex への LLFA Bridge 組み込み指示書
 
+## /run noexec 修正の引き継ぎ（2026-10-12）
+
+Light-Bridge 修正 commit は **da75130**（またはこれを含む後続公開 commit）。
+[配置・安全な復旧手順](TEMPORARY-HELPER-NOEXEC.md) と [検証報告](TEMPORARY-HELPER-NOEXEC-REPORT.md) を参照。
+実行 snapshot を /run から root所有0700の /var/lib に移した。設定/socketは /run に維持。
+起動前に noexec とコピーの実行可否を検査し、mount変更・loader迂回は行わない。
+C ABI／LLBA／compatibility ID `llfa-usbip-helper-3-auto-20261012` に変更はない。
+
+今回再確認した baseline は WiVRn **ff2fb9d6871b26d0a3a0a028eec40daf12ab8921**、Bridge fee4eca。
+`server/light_bridge_bootstrap.cpp:41` にhelper status、`server/light_bridge_host.cpp:40–43` にrequire/info/apply、
+`common/light_bridge_authorization.cpp:124` に固定 temporary-start-auto の管理者起動が存在する。
+`cmake/LightBridge.cmake:8–13` はSDK/helperを同時ビルドし、`:30` のhelper絶対パスをClient/Serverへ組み込む。
+既存 auto adapter／選択・承認 UI は統合済みで再作成不要。本文の過去の「次の差分作業」は当時の記録。
+
+担当者の変更：Bridge remote公開後にsubmoduleを da75130 または後続公開版へ更新・コミット・公開。
+CMakeはtools/*.rsを入力に持つのでhelper再ビルドを確認する。起動コマンド／通信packetの変更は不要。
+helper起動失敗の診断を新復旧文書へ案内し、GUIからの未知staging削除や自動recoveryを追加しない。
+実機203/EXECを記録した docs/light-bridge-automatic.md の旧配置説明を更新する。
+独自の未公開SDK c33f646 は使用・公開せず、担当公開remoteのBridge修正を使う。
+
+担当確認用：
+
+```sh
+cd ~/WiVRn
+git -C external/llfa-light-bridge fetch origin
+git -C external/llfa-light-bridge checkout da75130
+cmake -S . -B build-dashboard -DWIVRN_USE_LIGHT_BRIDGE=ON
+cmake --build build-dashboard --parallel 4
+```
+
+**利用者は WiVRn担当が公開した remote の更新に追従する。** 利用者がSDK pinを独自変更する必要はない。
+公開済みのWiVRn branchで：
+
+```sh
+cd ~/WiVRn
+git pull --ff-only
+git submodule update --init --recursive
+git submodule status external/llfa-light-bridge
+cmake -S . -B build-dashboard -DWIVRN_USE_LIGHT_BRIDGE=ON
+cmake --build build-dashboard --parallel 4
+./build-dashboard/light-bridge/release/usbip-helper --version
+```
+
+Piの既存Client buildではPC用Dashboardをビルドせず、同じremote更新／submodule取得後：
+
+```sh
+cmake -S . -B build-client-gstreamer -DWIVRN_USE_LIGHT_BRIDGE=ON
+cmake --build build-client-gstreamer --parallel 4
+./build-client-gstreamer/light-bridge/release/usbip-helper --version
+```
+
+build-client-bridge等を使っている場合はその既存directoryに読み替え、decoder／platform設定を維持する。
+Client/Serverへ埋め込んだ helper 出力が更新されていることを確認する。
+事前起動CLIではMonado Cargo版とWiVRn CMake版のどちらも修正済みに揃える。
+Export起動失敗の旧stagingは修正版CLIで明示 recovery、Importの同種失敗はroleをimportとして照合する。
+その後check-autoと/var/lib ExecStartを確認してWiVRn再接続する。
+このBridge作業ではWiVRn再ビルド／PKEXEC認証／root systemd／実USB/IPは未検証。Bridge OFF回帰と実機試験を担当側で行う。
+
+
 ## 自動準備 SDK の実装完了・次の差分作業
 
 Light-Bridge の自動準備本体とC APIは本版で実装済み。

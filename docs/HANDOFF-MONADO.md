@@ -1,5 +1,47 @@
 # Monado 担当 Codex への LLFA Bridge 組み込み指示書
 
+## /run noexec 修正の引き継ぎ（2026-10-12）
+
+Light-Bridge 修正 commit は **da75130**（またはこれを含む後続公開 commit）。
+[配置・安全な復旧手順](TEMPORARY-HELPER-NOEXEC.md) と [検証報告](TEMPORARY-HELPER-NOEXEC-REPORT.md) を参照。
+実機ログ35〜37の /run noexec、root所有0700でも203/EXECの停止に対応した。
+実行 binary は /var/lib、authorization/socket は /run。mount/fstab の変更は不要。
+C ABI、LLBA、helper compatibility ID `llfa-usbip-helper-3-auto-20261012` は変更していない。
+
+今回再確認した baseline は Monado **45866c990a14ae9067b983f61ada2a05cd5474ad**、Bridge fee4eca。
+`src/xrt/targets/common/target_llfa_bootstrap.cpp:101` は helper status、`:421` は committed apply。
+既存 auto adapter は統合済みで再作成不要。本文の fee4eca 時点の「次の差分作業」は当時の記録で、
+今回の作業は Bridge submodule pin 更新、helper の再ビルド、診断文書の更新に限定する。
+主 library は Monado 内、UDS／runtime opt-in／IMU／release順序を維持する。
+
+担当者：Bridge commit の remote 公開後、submodule pin を更新して Monado側でコミット・公開する。
+WiVRn と同じ Bridge修正版を使用する。sourceを独自forkや未公開patchで置き換えない。
+
+```sh
+cd ~/monado
+git -C src/external/llfa-link-light-bridge fetch origin
+git -C src/external/llfa-link-light-bridge checkout da75130
+cmake -S . -B build -DXRT_FEATURE_LLFA_BRIDGE=ON
+cmake --build build -j2
+cd src/external/llfa-link-light-bridge
+LLB_BUILD_REVISION=da75130 cargo build -p usbip-helper --release --locked
+./target/release/usbip-helper --version
+```
+
+上記の submodule pin は担当が確認後に記録する。Pi側利用者は **担当公開済み Monado remote** に追従し、
+`git pull --ff-only`、`git submodule update --init --recursive` で pin を取得して同じビルドを行う。
+既存 build設定と描画／arpara option は維持する。
+先に runtimeを停止し、修正版 helper の `temporary-recover-auto export --runtime-stopped` で
+旧 /run staging を所有権／service／journal 確認後に回収する。
+その後 `temporary-start-auto export --acknowledge-development-build` と `check-auto export` を実行する。
+正常稼働 helper を recovery で停止・削除しない。journal/socket存在時は復旧手順の照合へ戻る。
+
+WiVRn Clientが自身のCMake出力helperを管理者認証で起動する場合も、その binary が修正済みか確認する。
+Monado側 Cargo helperだけ更新して古いClient内蔵helperを再起動しない。
+/var/lib ExecStart、ActiveState、MainPID、check-auto、Bridge接続、USB転送を別々に採取して実証する。
+このBridge作業ではMonado再ビルド／root実行／Orange Piは未検証。
+
+
 ## 自動準備 SDK の実装完了・次の差分作業
 
 Light-Bridge側の自動準備本体は本版で実装済み。

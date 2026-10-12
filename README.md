@@ -12,6 +12,7 @@ Bridge の主動作核は両 runtime プロセス内に維持する。
 下記は従来の手動／Mock経路も含む。
 
 開発用 helper は永続 service 登録なしで一時起動できる。
+実行 snapshot は `/var/lib`、設定は `/run`。[noexec対応・失敗 staging 復旧](docs/TEMPORARY-HELPER-NOEXEC.md) と [修正検証](docs/TEMPORARY-HELPER-NOEXEC-REPORT.md) を参照。
 明示 sudo 承認、互換性確認、正常 cleanup 後の停止手順は
 [TEMPORARY-HELPER.md](docs/TEMPORARY-HELPER.md) を参照。installer／Dashboard の選択 UI は未実装。
 
