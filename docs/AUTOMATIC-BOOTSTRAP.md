@@ -21,6 +21,8 @@ installer は後回し。実 root systemd／package／USB/IP／Orange Pi の成�
 Bridge TCP は v3、従来 LLBI notification は v1。新 bootstrap は別 magic LLBA、schema v1、最大8192 bytes。
 bootstrap 用 WiVRn extension/hash の追加は WiVRn 担当の作業。既存の packet tags を変更しない。
 
+noexec `/run` 対応の binary 配置・失敗 staging 復旧は [TEMPORARY-HELPER-NOEXEC.md](TEMPORARY-HELPER-NOEXEC.md)。
+
 ## 開発用 helper の開始（policy／IP の指定不要）
 
 各 runtime の Bridge submodule 内で：
@@ -52,8 +54,8 @@ sudo は当該開発 binary を root 実行する明示的な承認であり、�
 SUDO_UID/GID から runtime account を設定する。既存 helper は一致する authorization の場合だけ再利用。
 不一致／停止中の既存導入／stale socket／stage／journal を無条件に置換・削除しない。
 
-起動時は root-owned `/run/llfa-link-light-bridge/temporary-auto-{export,import}` に binary と
-authorization を snapshot。unit は `llb-usbip-temporary-auto-{role}.service`、永続登録なし。
+起動時は root-owned `/var/lib/llfa-link-light-bridge/temporary-auto-{export,import}` に binary、
+`/run/llfa-link-light-bridge/temporary-auto-{export,import}` に authorization を snapshot。unit は `llb-usbip-temporary-auto-{role}.service`、永続登録なし。
 role の bootstrap socket は `/run/llfa-link-light-bridge/{role}.auto.sock`、root:runtime_gid 0660。
 policy は WiVRn connection の Prepare 時に自動決定する。modules／daemon も Prepare 時に準備する。
 SDK は自ら sudo／polkit を起動しない。launcher/UI が read-only status と利用者の選択を扱う。

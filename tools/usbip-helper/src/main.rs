@@ -1,6 +1,8 @@
 #[cfg(target_os = "linux")]
 mod auto_server;
 #[cfg(target_os = "linux")]
+mod recovery;
+#[cfg(target_os = "linux")]
 mod temporary;
 #[cfg(target_os = "linux")]
 fn main() {
@@ -13,6 +15,7 @@ fn main() {
 fn entry() -> Result<(), String> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.first().and_then(|v| v.to_str()) {
+        Some("temporary-recover-auto") if args.len()==3 && args[2]=="--runtime-stopped" => recovery::automatic(&args[1]),
         Some("temporary-start-auto") => temporary::start_auto(&args[1..]),
         Some("check-auto") if args.len()==2 => temporary::check_auto(&args[1]),
         Some("temporary-stop-auto") if args.len()==3 && args[2]=="--runtime-stopped" => temporary::stop_auto(&args[1]),
@@ -34,7 +37,7 @@ fn entry() -> Result<(), String> {
                 option_env!("LLB_BUILD_REVISION").unwrap_or("unspecified"));
             Ok(())
         }
-        _ => Err("Usage: usbip-helper check POLICY | temporary-start POLICY --acknowledge-development-build (sudo) | temporary-stop POLICY --runtime-stopped | serve ROOT_POLICY | --version".into()),
+        _ => Err("Usage: usbip-helper temporary-start-auto ROLE --acknowledge-development-build (sudo) | temporary-recover-auto ROLE --runtime-stopped (sudo) | check-auto ROLE | temporary-stop-auto ROLE --runtime-stopped | check POLICY | temporary-start POLICY --acknowledge-development-build (sudo) | temporary-stop POLICY --runtime-stopped | serve ROOT_POLICY | --version".into()),
     }
 }
 #[cfg(target_os = "linux")]

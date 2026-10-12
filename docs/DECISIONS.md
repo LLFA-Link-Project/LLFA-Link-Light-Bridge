@@ -1,5 +1,14 @@
 # Phase 1 の実装判断と仕様との差分
 
+## /run noexec の実機修正（2026-10-12）
+
+ArparaOpiLog/35〜37 の 203/EXEC は root:root／0700 の binary が noexec /run に置かれたことと一致。
+両 temporary mode の実行 snapshot を root 所有0700の /var/lib 配下に分離し、config/socket は /run に維持する。
+mount flag とコピーの --version の実行確認後に systemd が直接起動する。mount 変更／loader による迂回／永続登録はしない。
+手動 cleanup だけに頼らず、停止済み unit・空 journal/socket・role lock・既知所有 stage のみを照合する明示 temporary-recover-auto を追加。
+RPC／ABI に変更がないため compatibility ID は維持するが、helper の再ビルドと source commit／ExecStart の記録を必須にする。
+[復旧手順](TEMPORARY-HELPER-NOEXEC.md) を参照。native tests と root／Orange Pi 未実行を区別する。
+
 ## 接続連動の自動準備（2026-10-12、SDK／helper 実装）
 
 ユーザー指定により、通常 mode は WiVRn 接続から双方 IP を取得・交換し、Pi の承認済み単一 Tracker を自動選択、

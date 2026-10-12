@@ -52,3 +52,22 @@ fn cli_requires_explicit_development_approval_and_root_without_mutating() {
         assert!(String::from_utf8_lossy(&automatic.stderr).contains("explicit sudo authorization"));
     }
 }
+
+#[test]
+fn recovery_is_explicit_and_unprivileged_calls_do_not_mutate() {
+    let binary = env!("CARGO_BIN_EXE_usbip-helper");
+    let result = Command::new(binary)
+        .args(["temporary-recover-auto", "export"])
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("Usage"));
+    if unsafe { libc::geteuid() } != 0 {
+        let result = Command::new(binary)
+            .args(["temporary-recover-auto", "export", "--runtime-stopped"])
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("explicit sudo"));
+    }
+}

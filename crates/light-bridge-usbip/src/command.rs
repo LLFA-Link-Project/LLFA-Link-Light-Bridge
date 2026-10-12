@@ -104,6 +104,110 @@ pub fn run(operation: &Operation, timeout: Duration, cancel: &AtomicBool) -> Res
     let program = executable().map_err(|e| e.to_string())?;
     run_program(program, &operation.arguments(), timeout, cancel)
 }
+/// Fixed root-owned binary snapshot; /run may be mounted noexec.
+pub fn temporary_executable(role: &str, automatic: bool) -> Result<PathBuf, String> {
+    if !matches!(role, "export" | "import") {
+        return Err("temporary role invalid".into());
+    }
+    let mode = if automatic {
+        "temporary-auto"
+    } else {
+        "temporary"
+    };
+    Ok(PathBuf::from(format!(
+        "/var/lib/llfa-link-light-bridge/{mode}-{role}/helper"
+    )))
+}
+fn executable_mount_flags(flags: libc::c_ulong) -> Result<(), String> {
+    if flags & libc::ST_NOEXEC != 0 {
+        return Err("temporary executable filesystem is noexec; use an executable /var/lib deployment (no automatic remount or interpreter bypass)".into());
+    }
+    Ok(())
+}
+/// Check the existing parent before creating staging, then the copied binary before launching.
+pub fn executable_mount(path: &Path) -> Result<(), String> {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(|e| e.to_string())?;
+    let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    // SAFETY: valid CString and writable output; only initialized on success.
+    if unsafe { libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) } != 0 {
+        return Err(format!(
+            "cannot inspect executable mount: {}",
+            io::Error::last_os_error()
+        ));
+    }
+    executable_mount_flags(unsafe { stat.assume_init() }.f_flag)
+}
+fn verify_temporary_executable(path: &Path) -> Result<(), String> {
+    trusted(path).map_err(|e| e.to_string())?;
+    executable_mount(path)?;
+    // Actually execute the protected copy: catches loader/architecture/LSM permission errors
+    // before systemd is asked to start a long-lived privileged service.
+    let version = capture(
+        path,
+        &["--version".into()],
+        Duration::from_secs(3),
+        &AtomicBool::new(false),
+    )?;
+    let version = String::from_utf8(version).map_err(|e| e.to_string())?;
+    if !version.contains(&format!(
+        "compatibility={}",
+        crate::helper::COMPATIBILITY_ID
+    )) {
+        return Err("staged helper identity mismatch; retain staging for inspection".into());
+    }
+    Ok(())
+}
+/// Read-only recovery audit of a fixed transient helper unit. Never stop/kill a service.
+pub fn temporary_unit_status(role: &str, automatic: bool) -> Result<Vec<u8>, String> {
+    temporary_executable(role, automatic)?;
+    if unsafe { libc::geteuid() } != 0 {
+        return Err("explicit root authorization required".into());
+    }
+    let mode = if automatic {
+        "temporary-auto"
+    } else {
+        "temporary"
+    };
+    let program = Path::new("/usr/bin/systemctl");
+    trusted(program).map_err(|e| e.to_string())?;
+    let unit = format!("llb-usbip-{mode}-{role}.service");
+    match capture(
+        program,
+        &[
+            "show".into(),
+            "--property=LoadState,ActiveState,SubState,MainPID,ControlPID,Result,ExecMainStatus"
+                .into(),
+            unit.clone(),
+        ],
+        Duration::from_secs(5),
+        &AtomicBool::new(false),
+    ) {
+        Ok(status) => Ok(status),
+        Err(show_error) => {
+            // --collect may already have unloaded a failed unit. A successful, empty
+            // exact-name list proves absence; bus/query errors never imply stopped.
+            let units = capture(
+                program,
+                &[
+                    "list-units".into(),
+                    "--all".into(),
+                    "--full".into(),
+                    "--plain".into(),
+                    "--no-legend".into(),
+                    "--no-pager".into(),
+                    unit,
+                ],
+                Duration::from_secs(5),
+                &AtomicBool::new(false),
+            )?;
+            if units.iter().any(|b| !b.is_ascii_whitespace()) {
+                return Err(show_error);
+            }
+            Ok(b"LoadState=not-found\nActiveState=inactive\nSubState=dead\nMainPID=0\nControlPID=0\n".to_vec())
+        }
+    }
+}
 /// Fixed transient service launch, used only by the explicitly root-authorized CLI.
 pub fn start_temporary_service(role: &str, executable: &Path, policy: &Path) -> Result<(), String> {
     let args = temporary_service_arguments(role, executable, policy)?;
@@ -114,6 +218,7 @@ pub fn start_temporary_service(role: &str, executable: &Path, policy: &Path) -> 
     for path in [executable, policy, Path::new("/usr/bin/systemd-run")] {
         trusted(path).map_err(|e| e.to_string())?;
     }
+    verify_temporary_executable(executable)?;
     run_program(
         Path::new("/usr/bin/systemd-run"),
         &args,
@@ -125,12 +230,15 @@ pub fn start_auto_service(role: &str) -> Result<(), String> {
     if !matches!(role, "export" | "import") || unsafe { libc::geteuid() } != 0 {
         return Err("fixed role and explicit root authorization required".into());
     }
-    let dir = format!("/run/llfa-link-light-bridge/temporary-auto-{role}");
-    let executable = Path::new(&dir).join("helper");
-    let auth = Path::new(&dir).join("authorization.json");
+    let executable = temporary_executable(role, true)?;
+    let auth = Path::new(&format!(
+        "/run/llfa-link-light-bridge/temporary-auto-{role}"
+    ))
+    .join("authorization.json");
     for p in [&executable, &auth, &PathBuf::from("/usr/bin/systemd-run")] {
         trusted(p).map_err(|e| e.to_string())?;
     }
+    verify_temporary_executable(&executable)?;
     let args = vec![
         format!("--unit=llb-usbip-temporary-auto-{role}"),
         "--collect".into(),
@@ -161,7 +269,7 @@ fn temporary_service_arguments(
         return Err("temporary role invalid".into());
     }
     let expected = format!("/run/llfa-link-light-bridge/temporary-{role}");
-    if executable != Path::new(&expected).join("helper")
+    if executable != temporary_executable(role, false)?
         || policy != Path::new(&expected).join("policy.json")
     {
         return Err("fixed staging paths required".into());
@@ -269,7 +377,7 @@ mod tests {
     use super::*;
     #[test]
     fn transient_launch_rejects_arbitrary_program_role_and_policy_paths() {
-        let exe = Path::new("/run/llfa-link-light-bridge/temporary-export/helper");
+        let exe = Path::new("/var/lib/llfa-link-light-bridge/temporary-export/helper");
         let policy = Path::new("/run/llfa-link-light-bridge/temporary-export/policy.json");
         let args = temporary_service_arguments("export", exe, policy).unwrap();
         assert!(args.contains(&"--service-type=exec".into()));
@@ -287,6 +395,25 @@ mod tests {
         assert!(temporary_service_arguments("export", Path::new("/usr/bin/sh"), policy).is_err());
         assert!(temporary_service_arguments("export", exe, Path::new("/tmp/user.json")).is_err());
         assert!(temporary_service_arguments("import", exe, policy).is_err());
+    }
+    #[test]
+    fn noexec_is_detected_and_staging_paths_are_fixed() {
+        assert!(executable_mount_flags(libc::ST_NOEXEC).is_err());
+        executable_mount_flags(libc::ST_NODEV | libc::ST_NOSUID).unwrap();
+        for role in ["export", "import"] {
+            for auto in [false, true] {
+                let path = temporary_executable(role, auto).unwrap();
+                assert!(path.starts_with("/var/lib/llfa-link-light-bridge"));
+                assert!(!path.starts_with("/run"));
+            }
+        }
+        assert!(temporary_executable("../../tmp", true).is_err());
+        assert!(temporary_service_arguments(
+            "export",
+            Path::new("/run/llfa-link-light-bridge/temporary-export/helper"),
+            Path::new("/run/llfa-link-light-bridge/temporary-export/policy.json")
+        )
+        .is_err());
     }
     #[test]
     fn timeout_reaps_process_group_and_checks_exit() {

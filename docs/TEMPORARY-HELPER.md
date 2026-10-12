@@ -1,3 +1,6 @@
+> 現行の binary staging は `/var/lib/llfa-link-light-bridge/temporary-ROLE/helper`。設定は `/run` に維持。
+> noexec と自動 mode の失敗復旧は [TEMPORARY-HELPER-NOEXEC.md](TEMPORARY-HELPER-NOEXEC.md)。
+
 # 開発用 helper の一時起動
 
 installer は実装しない。Linux の `usbip-helper` CLI が、明示的な管理者承認を受けた

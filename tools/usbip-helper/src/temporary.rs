@@ -26,6 +26,45 @@ pub fn role_name(role: Role) -> &'static str {
 pub fn auto_stage(role: Role) -> PathBuf {
     Path::new(ROOT).join(format!("temporary-auto-{}", role_name(role)))
 }
+pub fn binary_stage(role: Role, automatic: bool) -> PathBuf {
+    command::temporary_executable(role_name(role), automatic)
+        .unwrap()
+        .parent()
+        .unwrap()
+        .into()
+}
+fn copy_binary(role: Role, automatic: bool) -> Result<PathBuf> {
+    let parent = Path::new("/var/lib/llfa-link-light-bridge");
+    command::executable_mount(parent)?;
+    let dir = binary_stage(role, automatic);
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&dir)
+        .map_err(|e| format!("binary staging refused; no overwrite: {e}"))?;
+    protected_dir(&dir, 0o700)?;
+    let mut binary = Vec::new();
+    File::open("/proc/self/exe")
+        .map_err(|e| e.to_string())?
+        .take(64 * 1024 * 1024 + 1)
+        .read_to_end(&mut binary)
+        .map_err(|e| e.to_string())?;
+    if binary.len() > 64 * 1024 * 1024 {
+        return Err("binary staging limit exceeded".into());
+    }
+    let path = dir.join("helper");
+    write_new(&path, 0o700, &binary)?;
+    File::open(&dir)
+        .and_then(|f| f.sync_all())
+        .map_err(|e| e.to_string())?;
+    Ok(path)
+}
+fn remove_binary_stage(role: Role, automatic: bool) -> Result<()> {
+    let dir = binary_stage(role, automatic);
+    command::trusted(&dir).map_err(|e| e.to_string())?;
+    command::trusted(&dir.join("helper")).map_err(|e| e.to_string())?;
+    fs::remove_file(dir.join("helper")).map_err(|e| e.to_string())?;
+    fs::remove_dir(dir).map_err(|e| e.to_string())
+}
 fn parse_role(value: &std::ffi::OsStr) -> Result<Role> {
     match value.to_str() {
         Some("export") => Ok(Role::Export),
@@ -145,22 +184,23 @@ pub fn start_auto(args: &[std::ffi::OsString]) -> Result<()> {
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
         return Err("helper role already owned".into());
     }
+    for leftover in [
+        binary_stage(role, true),
+        binary_stage(role, false),
+        stage(role),
+    ] {
+        if exists(&leftover)? {
+            return Err("residual staging; inspect/recover before starting".into());
+        }
+    }
+    command::executable_mount(state)?;
     let dir = auto_stage(role);
     fs::DirBuilder::new()
         .mode(0o700)
         .create(&dir)
         .map_err(|e| format!("staging refused; no overwrite: {e}"))?;
     protected_dir(&dir, 0o700)?;
-    let mut binary = Vec::new();
-    File::open("/proc/self/exe")
-        .map_err(|e| e.to_string())?
-        .take(64 * 1024 * 1024 + 1)
-        .read_to_end(&mut binary)
-        .map_err(|e| e.to_string())?;
-    if binary.len() > 64 * 1024 * 1024 {
-        return Err("binary staging limit exceeded".into());
-    }
-    write_new(&dir.join("helper"), 0o700, &binary)?;
+    copy_binary(role, true)?;
     write_new(
         &dir.join("authorization.json"),
         0o600,
@@ -206,14 +246,15 @@ pub fn stop_auto(value: &std::ffi::OsStr) -> Result<()> {
     Ok(())
 }
 pub fn remove_auto_stage(role: Role) -> Result<()> {
+    // /var/lib is private: remove binary first, then the observable /run completion marker.
+    remove_binary_stage(role, true)?;
     let dir = auto_stage(role);
     command::trusted(&dir).map_err(|e| e.to_string())?;
-    for name in ["authorization.json", "helper"] {
-        let path = dir.join(name);
-        command::trusted(&path).map_err(|e| e.to_string())?;
-        fs::remove_file(path).map_err(|e| e.to_string())?;
-    }
-    fs::remove_dir(dir).map_err(|e| e.to_string())
+    let path = dir.join("authorization.json");
+    command::trusted(&path).map_err(|e| e.to_string())?;
+    fs::remove_file(path).map_err(|e| e.to_string())?;
+    fs::remove_dir(dir).map_err(|e| e.to_string())?;
+    Ok(())
 }
 pub fn stage(role: Role) -> PathBuf {
     Path::new(ROOT).join(format!("temporary-{}", role_name(role)))
@@ -372,24 +413,23 @@ pub fn start(path: &Path) -> Result<()> {
             return Err("residual ownership journal: audit before starting".into());
         }
     }
+    for leftover in [
+        binary_stage(policy.role, false),
+        binary_stage(policy.role, true),
+        auto_stage(policy.role),
+    ] {
+        if exists(&leftover)? {
+            return Err("residual staging; inspect/recover before starting".into());
+        }
+    }
+    command::executable_mount(state)?;
     let dir = stage(policy.role);
     fs::DirBuilder::new()
         .mode(0o700)
         .create(&dir)
         .map_err(|e| format!("staging refused (no overwrite): {e}"))?;
     protected_dir(&dir, 0o700)?;
-    // Copy the actual running executable inode, not a replaceable pathname. Administrator
-    // explicitly trusts this development build; this is not an authenticated installer.
-    let mut binary = Vec::new();
-    File::open("/proc/self/exe")
-        .map_err(|e| e.to_string())?
-        .take(64 * 1024 * 1024 + 1)
-        .read_to_end(&mut binary)
-        .map_err(|e| e.to_string())?;
-    if binary.len() > 64 * 1024 * 1024 {
-        return Err("development binary exceeds staging limit".into());
-    }
-    write_new(&dir.join("helper"), 0o700, &binary)?;
+    let executable = copy_binary(policy.role, false)?;
     write_new(
         &dir.join("policy.json"),
         0o600,
@@ -400,7 +440,7 @@ pub fn start(path: &Path) -> Result<()> {
     drop(lock);
     command::start_temporary_service(
         role_name(policy.role),
-        &dir.join("helper"),
+        &executable,
         &dir.join("policy.json"),
     )?;
     let end = Instant::now() + Duration::from_secs(5);
@@ -451,15 +491,15 @@ pub fn stop(path: &Path) -> Result<()> {
     Ok(())
 }
 pub fn remove_stage(role: Role) -> Result<()> {
+    remove_binary_stage(role, false)?;
     let dir = stage(role);
     command::trusted(&dir).map_err(|e| e.to_string())?;
     // Only fixed, owned files; never recursive removal or journal deletion.
-    for name in ["policy.json", "helper"] {
-        let path = dir.join(name);
-        command::trusted(&path).map_err(|e| e.to_string())?;
-        fs::remove_file(path).map_err(|e| e.to_string())?;
-    }
-    fs::remove_dir(dir).map_err(|e| e.to_string())
+    let path = dir.join("policy.json");
+    command::trusted(&path).map_err(|e| e.to_string())?;
+    fs::remove_file(path).map_err(|e| e.to_string())?;
+    fs::remove_dir(dir).map_err(|e| e.to_string())?;
+    Ok(())
 }
 #[cfg(test)]
 mod tests {

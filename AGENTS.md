@@ -89,7 +89,7 @@ Dependencies must be cached before offline commands; `cargo fetch --locked` prep
 - Installer work is deferred. Follow docs/TEMPORARY-HELPER.md and docs/HELPER-DEPLOYMENT-CONTRACT.md.
 - Automatic helper schema is v1 with compatibility ID llfa-usbip-helper-3-auto-20261012; manual helper RPC is v2; Bridge TCP v3, notification v1 and C ABI v1 remain unchanged. Bump the dedicated helper compatibility ID on privileged contract changes.
 - Check identity and exact policy before mutation on the same connection. A mismatch or unknown/stopped installation must not silently use a temporary helper or Mock.
-- Temporary startup requires explicit administrator approval of the development binary, protected /run staging and fixed transient systemd arguments. Never enable persistent units or add broad sudoers rules.
+- Temporary startup requires explicit administrator approval of the development binary, protected /var/lib binary staging plus /run configuration and fixed transient systemd arguments. Never enable persistent units or add broad sudoers rules.
 - Normal temporary shutdown requires runtime acknowledgement and an empty ownership journal. Retain uncertain resources; no automatic journal removal or immediate shutdown on runtime exit.
 
 ## Connection-driven automatic setup SDK
@@ -104,3 +104,6 @@ Dependencies must be cached before offline commands; `cargo fetch --locked` prep
 
 - Automatic preparation accepts only private/link-local routes (loopback explicitly authorized), port 3240 and the supported Tracker profile. Keep foreign exports, stale journals and occupied resources fail-closed.
 - Verify both Prepared leases before Commit; bootstrap environment preparation must never bind/attach USB. Explicitly require kernel setup in automatic adapters to prevent Mock fallback.
+
+- Temporary helpers must not execute binaries from /run. Follow docs/TEMPORARY-HELPER-NOEXEC.md; check mount execution permission and run the protected copy with --version before systemd startup. Never remount or bypass noexec with an interpreter.
+- Failed-stage recovery is explicit: stopped/absent units, role lock, absent USB/environment journals and sockets, verified root ownership and fixed file inventory. Never use recovery to delete a journal/socket or kill a helper.

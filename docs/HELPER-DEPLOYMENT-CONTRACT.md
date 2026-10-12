@@ -69,3 +69,5 @@ UI を持たない Monado は構造化した状態／診断を返し、対話可
 installer 更新失敗、二重起動、相手側準備失敗、同一 package version の異なる互換性 ID を試験する。
 中断時に新規 bind／attach がゼロであること、正常終了と異常終了で所有権 barrier と journal が
 維持されることを確認する。Mock／unit 試験と実 systemd／管理者認証／USB 試験は分けて報告する。
+
+一時起動の実行 snapshot は `/var/lib`、設定は `/run`。noexec の起動失敗と明示復旧は [TEMPORARY-HELPER-NOEXEC.md](TEMPORARY-HELPER-NOEXEC.md)。
