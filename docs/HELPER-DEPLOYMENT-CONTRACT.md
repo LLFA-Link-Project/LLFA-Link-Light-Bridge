@@ -7,7 +7,8 @@ installer、socket activation、Dashboard の選択 UI／自動認証は未実�
 
 最新要求の通常利用は [AUTOMATIC-BOOTSTRAP-DESIGN.md](AUTOMATIC-BOOTSTRAP-DESIGN.md) に従い、
 WiVRn 接続から route と単一 Tracker を選び、policy と USB/IP 初期準備を自動化する。
-これには許可 limits と session policy の分離・次版 helper 契約が必要で、まだ未実装。
+許可 limits と session policy を分離した SDK／helper を実装済み。
+[AUTOMATIC-BOOTSTRAP.md](AUTOMATIC-BOOTSTRAP.md) を参照。runtime 接続と GUI は後続作業。
 以下の現行 exact-policy／一時 CLI は診断・開発経路として維持し、互換性拒否を緩めない。
 
 ## 利用判断
@@ -34,7 +35,7 @@ release → detach → unexport と journal 照合を維持し、判定失敗を
 Cargo の package version（現在 0.1.0）や RPC version=1 だけでは build の一致を判断できない。
 専用の helper compatibility ID を runtime と helper の build に埋め込み、初期実装では完全一致を要求する。
 製品 version、build revision、RPC version、role、必要な capability も診断に含める。
-現在の compatibility ID は `llfa-usbip-helper-2-20261012`。privileged contract の変更で更新する。
+現在の compatibility ID は `llfa-usbip-helper-3-auto-20261012`。privileged contract の変更で更新する。
 RPC v2 は ID と全 policy を検証する。Git revision の完全一致ではなく専用 ID と package version の一致。
 任意 compile-time build revision は診断専用で、未設定は unspecified とする。
 

@@ -1,6 +1,16 @@
 //! USB inventory/planning, Mock transfer, and helper-mediated Linux kernel USB/IP.
 #[cfg(target_os = "linux")]
+pub mod auto_worker;
+#[cfg(target_os = "linux")]
+pub mod bootstrap;
+#[cfg(target_os = "linux")]
+pub mod bootstrap_rpc;
+#[cfg(target_os = "linux")]
 pub mod command;
+#[cfg(target_os = "linux")]
+pub mod environment;
+#[cfg(target_os = "linux")]
+pub mod fd_channel;
 #[cfg(target_os = "linux")]
 pub mod helper;
 pub mod inventory;

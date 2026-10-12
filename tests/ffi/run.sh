@@ -21,3 +21,9 @@ target/debug/ffi-clock-smoke
 cc -std=c11 -Wall -Wextra -Werror -I "$LLB_HEADER_DIR" tests/ffi/clock-smoke.c \
  target/debug/liblight_bridge_ffi.a -lpthread -ldl -lm -o target/debug/ffi-static-clock-smoke
 target/debug/ffi-static-clock-smoke
+cc -std=c11 -Wall -Wextra -Werror -I "$LLB_HEADER_DIR" tests/ffi/auto-smoke.c \
+ -L target/debug -llight_bridge_ffi -Wl,-rpath,"$PWD/target/debug" -o target/debug/ffi-auto-smoke
+target/debug/ffi-auto-smoke
+cc -std=c11 -Wall -Wextra -Werror -I "$LLB_HEADER_DIR" tests/ffi/auto-smoke.c \
+ target/debug/liblight_bridge_ffi.a -lpthread -ldl -lm -o target/debug/ffi-static-auto-smoke
+target/debug/ffi-static-auto-smoke

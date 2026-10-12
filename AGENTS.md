@@ -87,17 +87,20 @@ Dependencies must be cached before offline commands; `cargo fetch --locked` prep
 ## Development helper deployment
 
 - Installer work is deferred. Follow docs/TEMPORARY-HELPER.md and docs/HELPER-DEPLOYMENT-CONTRACT.md.
-- Helper RPC is v2; Bridge TCP v3, notification v1 and C ABI v1 remain unchanged. Bump the dedicated helper compatibility ID on privileged contract changes.
+- Automatic helper schema is v1 with compatibility ID llfa-usbip-helper-3-auto-20261012; manual helper RPC is v2; Bridge TCP v3, notification v1 and C ABI v1 remain unchanged. Bump the dedicated helper compatibility ID on privileged contract changes.
 - Check identity and exact policy before mutation on the same connection. A mismatch or unknown/stopped installation must not silently use a temporary helper or Mock.
 - Temporary startup requires explicit administrator approval of the development binary, protected /run staging and fixed transient systemd arguments. Never enable persistent units or add broad sudoers rules.
 - Normal temporary shutdown requires runtime acknowledgement and an empty ownership journal. Retain uncertain resources; no automatic journal removal or immediate shutdown on runtime exit.
 
-## Connection-driven automatic setup (design, not implemented)
+## Connection-driven automatic setup SDK
 
 - Monado/WiVRn already contain runtime adapters, timing, pose delivery and helper preflight. Write handoffs as changes to an inspected checkout baseline, distinguish reused/modified/new work, and remove stale claims that integrated hooks are missing.
 
-- Follow docs/AUTOMATIC-BOOTSTRAP-DESIGN.md for the next implementation. Default opt-in auto mode must derive/exchange addresses from the WiVRn connection and resolve exact Tracker identity without manual IP/policy/busid/timing-ID entry.
+- Follow docs/AUTOMATIC-BOOTSTRAP.md and docs/AUTOMATIC-BOOTSTRAP-DESIGN.md. Default opt-in auto mode must derive/exchange addresses from the WiVRn connection and resolve exact Tracker identity without manual IP/policy/busid/timing-ID entry.
 - Bootstrap precedes Lighthouse and stream readiness. Create the Monado listener before resolving policy; exchange Prepare/Offer/Commit and require both sides prepared before USB mutation.
 - Automatically select one supported, authorized candidate; require selection for ambiguity and always deny the HMD. Keep root authorization limits separate from immutable per-session exact policy.
 - Helper prepares allowed modules, managed usbipd and scoped network access. Preserve initial administrator authorization, helper compatibility rejection, dedicated workers and resource journals. Installer is deferred.
-- Treat the bootstrap protocol, helper operations and UI as new work, not existing hooks. Do not loosen current exact-policy checks to implement dynamic addresses.
+- The SDK/helper bootstrap exists; upstream packet routing and UI integration remain new work. Do not loosen current exact-policy checks to implement dynamic addresses.
+
+- Automatic preparation accepts only private/link-local routes (loopback explicitly authorized), port 3240 and the supported Tracker profile. Keep foreign exports, stale journals and occupied resources fail-closed.
+- Verify both Prepared leases before Commit; bootstrap environment preparation must never bind/attach USB. Explicitly require kernel setup in automatic adapters to prevent Mock fallback.

@@ -113,3 +113,10 @@ native Rust／C ABI、固定 transient argv、policy 読取、compatibility／po
 両 runtime の新 preflight API の組み込みは未検証。既存 runtime の Mock 試験と区別する。
 
 systemd の挙動は [公式 systemd-run 説明](https://github.com/systemd/systemd/blob/main/man/systemd-run.xml) を参照。
+
+## 接続連動の自動準備（2026-10-12）
+
+[AUTOMATIC-BOOTSTRAP.md](AUTOMATIC-BOOTSTRAP.md) に SDK／helper と新 C API、LLBA v1／SCM_RIGHTS の契約を記載。
+Bridge TCP v3、LLBI notification v1、C ABI v1 は維持。manual helper RPC v2、auto helper schema v1、
+compatibility ID は `llfa-usbip-helper-3-auto-20261012`。旧 helper の不一致は中断する。
+[検証報告](AUTOMATIC-BOOTSTRAP-REPORT.md) は Mock／native FD と実 root・実機未検証を分離している。

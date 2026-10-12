@@ -1,4 +1,6 @@
 //! Versioned frames with bounded in-memory and two-lane TCP transports.
+#[cfg(target_os = "linux")]
+pub mod bootstrap;
 #[cfg(unix)]
 pub mod ipc;
 pub mod network;

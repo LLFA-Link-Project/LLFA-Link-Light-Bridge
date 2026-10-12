@@ -1,6 +1,9 @@
 # WiVRn 接続連動の自動準備設計
 
-2026-10-12、ユーザー要求。**設計／後続実装指示であり、まだ実装済みではない。**
+2026-10-12、ユーザー要求。この文書は設計原本。
+現在は Light-Bridge 側 SDK／helper を実装済み。実 APIと制限は
+[AUTOMATIC-BOOTSTRAP.md](AUTOMATIC-BOOTSTRAP.md)、検証は [報告](AUTOMATIC-BOOTSTRAP-REPORT.md) を参照。
+両 adapter の auto branch／WiVRn packet/UI は未統合。以下の候補名と実 API を区別する。
 現在の d765f16 は exact JSON policy、手動 module／usbipd 準備、開発用一時 helper CLI を使用する。
 本設計は通常利用の手動 IP／busid／sysfs／policy 入力を置き換える。
 installer は引き続き後回し。一時 helper の自動準備経路を優先する。
@@ -211,4 +214,5 @@ ClockSync/reference受信 → 正常解放まで成立すること。
 失敗前後の mutation counts、lease／journal／daemon／rule と local IMU 継続を確認する。
 native Mock、root systemd、実 USB/IP、Orange Pi ARM64 の結果を分ける。
 
-現状はこの設計の採用と引き継ぎ文書更新のみ。実装・実機検証は後続作業であり完成扱いしない。
+Light-Bridge 側は SDK／helper が実装済み。実際の API／版／制限は利用契約を正とし、
+両 runtime の自動接続統合と実機検証を後続作業として分けて報告する。

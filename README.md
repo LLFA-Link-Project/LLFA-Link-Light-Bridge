@@ -7,8 +7,9 @@ Bridge の主動作核は両 runtime プロセス内に維持する。
 
 ## 実行
 
-通常利用で手動 IP／policy 設定を不要にする次の設計は
-[接続連動の自動準備](docs/AUTOMATIC-BOOTSTRAP-DESIGN.md)。設計段階で、現行 code は下記の手動準備方式。
+手動 IP／policy 設定を不要にする [自動準備 SDK／helper](docs/AUTOMATIC-BOOTSTRAP.md) を実装済み。
+両 runtime の auto branch／GUI と実 root／USB は未統合・未検証。[検証報告](docs/AUTOMATIC-BOOTSTRAP-REPORT.md) を参照。
+下記は従来の手動／Mock経路も含む。
 
 開発用 helper は永続 service 登録なしで一時起動できる。
 明示 sudo 承認、互換性確認、正常 cleanup 後の停止手順は

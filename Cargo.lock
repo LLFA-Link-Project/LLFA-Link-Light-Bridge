@@ -145,6 +145,7 @@ version = "0.1.0"
 dependencies = [
  "light-bridge-core",
  "light-bridge-usbip",
+ "serde",
  "serde_json",
 ]
 

@@ -25,6 +25,10 @@
 
 #define LLB_HOST 1
 
+typedef struct LlbAutoHandle LlbAutoHandle;
+
+typedef struct LlbBootstrapHandle LlbBootstrapHandle;
+
 typedef struct LlbHandle LlbHandle;
 
 typedef struct {
@@ -117,6 +121,20 @@ typedef struct {
   uint64_t host_id;
   uint64_t correlation_id;
 } LlbEndpoint;
+
+typedef struct {
+  uint32_t size;
+  uint32_t abi_version;
+  uint32_t role;
+  uint32_t reserved;
+  uint64_t instance;
+  uint64_t session;
+  uint64_t host_id;
+  uint64_t generation;
+  LlbTimingConfig timing;
+  LlbEndpoint host_bind;
+  uint8_t serial[129];
+} LlbBootstrapInfo;
 
 #ifdef __cplusplus
 extern "C" {
@@ -235,6 +253,126 @@ int32_t llb_destroy(LlbHandle **handle);
 int32_t llb_heartbeat(LlbHandle *handle);
 
 int32_t llb_get_state(const LlbHandle *handle, uint32_t *state, uint32_t *needs_runtime_release);
+
+/**
+ * Read-only launcher status. Only Missing permits offering temporary administrator authorization.
+ */
+int32_t llb_auto_helper_status(uint32_t helper_role,
+                               uint8_t *bytes,
+                               uint32_t capacity,
+                               uint32_t *written);
+
+/**
+ * Mark an unlinked handle as auto/kernel-only before negotiation; generic TCP cannot fall back to Mock.
+ */
+int32_t llb_bootstrap_require(LlbHandle *handle);
+
+/**
+ * Label an Inventory reply with the active Prepare stamp for Client selection UI.
+ */
+int32_t llb_bootstrap_candidates_packet(const uint8_t *prepare,
+                                        uint32_t prepare_len,
+                                        const uint8_t *response,
+                                        uint32_t response_len,
+                                        uint8_t *out,
+                                        uint32_t capacity,
+                                        uint32_t *written);
+
+/**
+ * Create a host request from a connected WiVRn TCP FD. No IP or timing IDs are required.
+ * Optional quality template uses the TimingConfig size/ABI prefix; IDs are generated.
+ */
+int32_t llb_bootstrap_new_request(int32_t fd,
+                                  const LlbTimingConfig *quality,
+                                  uint8_t *bytes,
+                                  uint32_t capacity,
+                                  uint32_t *written);
+
+int32_t llb_bootstrap_create(const uint8_t *bytes, uint32_t n, LlbBootstrapHandle **out);
+
+/**
+ * Apply an Offer or Prepared packet. State is bounded; changed or stale offers are rejected.
+ */
+int32_t llb_bootstrap_receive(LlbBootstrapHandle *handle, const uint8_t *bytes, uint32_t n);
+
+int32_t llb_bootstrap_commit(LlbBootstrapHandle *handle,
+                             uint8_t *bytes,
+                             uint32_t capacity,
+                             uint32_t *written);
+
+int32_t llb_bootstrap_destroy(LlbBootstrapHandle **slot);
+
+/**
+ * Convert bootstrap packet to fixed helper command: 1 export, 2 import, 3 commit, 4 release.
+ * Release requires runtime_stopped=1 after normal USB cleanup. serial may be NULL/0 for auto selection.
+ */
+int32_t llb_bootstrap_helper_command(const uint8_t *bytes,
+                                     uint32_t n,
+                                     uint32_t operation,
+                                     const uint8_t *serial,
+                                     uint32_t serial_len,
+                                     uint32_t runtime_stopped,
+                                     uint32_t helper_role,
+                                     uint8_t *out,
+                                     uint32_t capacity,
+                                     uint32_t *written);
+
+/**
+ * Convert a successful helper Prepared reply to a WiVRn/UDS Offer or Prepared packet.
+ */
+int32_t llb_bootstrap_response_packet(const uint8_t *bytes,
+                                      uint32_t n,
+                                      uint8_t *out,
+                                      uint32_t capacity,
+                                      uint32_t *written);
+
+/**
+ * Committed reply metadata: IDs, timing, Host bind address and selected serial.
+ */
+int32_t llb_bootstrap_get_info(const uint8_t *bytes, uint32_t n, LlbBootstrapInfo *out);
+
+/**
+ * Configure an unlinked runtime handle from a committed root helper reply. No Mock fallback.
+ */
+int32_t llb_bootstrap_apply(LlbHandle *handle, const uint8_t *bytes, uint32_t n);
+
+int32_t llb_auto_worker_create(uint32_t helper_role, LlbAutoHandle **out);
+
+int32_t llb_auto_worker_submit(LlbAutoHandle *handle,
+                               uint64_t operation_id,
+                               const uint8_t *bytes,
+                               uint32_t n,
+                               int32_t route_fd);
+
+/**
+ * Return 6 when no completion is available. Outputs require 8192 bytes to avoid lost replies.
+ */
+int32_t llb_auto_worker_poll(LlbAutoHandle *handle,
+                             uint64_t *id,
+                             uint8_t *bytes,
+                             uint32_t capacity,
+                             uint32_t *written);
+
+int32_t llb_auto_worker_destroy(LlbAutoHandle **slot);
+
+/**
+ * Duplex local bootstrap I/O, same UID, one optional TCP fd; use an adapter control worker.
+ */
+int32_t llb_bootstrap_ipc_send(int32_t fd,
+                               const uint8_t *bytes,
+                               uint32_t n,
+                               int32_t route_fd,
+                               uint32_t timeout_ms);
+
+/**
+ * On any framing failure close the original stream. Returned TCP descriptor is owned by caller.
+ */
+int32_t llb_bootstrap_ipc_receive(int32_t fd,
+                                  int32_t *route_fd,
+                                  uint8_t *bytes,
+                                  uint32_t capacity,
+                                  uint32_t *written,
+                                  uint32_t timeout_ms);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -437,7 +437,7 @@ impl KernelOps for LinuxOps {
         {
             return Err("not an unowned local whole USB device".into());
         }
-        if !std::path::Path::new("/sys/module/usbip_host").exists() {
+        if !std::path::Path::new("/sys/bus/usb/drivers/usbip-host").exists() {
             return Err("usbip_host not loaded".into());
         }
         Ok(d.device_driver)
@@ -454,7 +454,7 @@ impl KernelOps for LinuxOps {
     }
     fn ports(&self) -> KResult<BTreeMap<u32, Port>> {
         crate::command::executable().map_err(|e| format!("usbip prerequisite: {e}"))?;
-        if !std::path::Path::new("/sys/module/vhci_hcd").exists() {
+        if !std::path::Path::new("/sys/devices/platform/vhci_hcd.0").exists() {
             return Err("vhci_hcd not loaded".into());
         }
         let base = PathBuf::from("/sys/devices/platform/vhci_hcd.0");

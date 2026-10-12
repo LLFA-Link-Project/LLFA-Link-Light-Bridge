@@ -33,4 +33,22 @@ fn cli_requires_explicit_development_approval_and_root_without_mutating() {
         .unwrap();
     assert!(!stop.status.success());
     assert!(String::from_utf8_lossy(&stop.stderr).contains("Usage"));
+    let automatic = Command::new(binary)
+        .args(["temporary-start-auto", "export"])
+        .output()
+        .unwrap();
+    assert!(!automatic.status.success());
+    assert!(String::from_utf8_lossy(&automatic.stderr).contains("acknowledgement"));
+    if unsafe { libc::geteuid() } != 0 {
+        let automatic = Command::new(binary)
+            .args([
+                "temporary-start-auto",
+                "export",
+                "--acknowledge-development-build",
+            ])
+            .output()
+            .unwrap();
+        assert!(!automatic.status.success());
+        assert!(String::from_utf8_lossy(&automatic.stderr).contains("explicit sudo authorization"));
+    }
 }

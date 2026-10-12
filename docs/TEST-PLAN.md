@@ -73,7 +73,7 @@ runtime 配備、helper service、arm64/MSRV は未検証のまま分けて記�
 - 実 systemd／sudo／root staging／正常 stage cleanup／異常 journal recovery／ARM64 は未検証。
   実試験時は導入済み一致／不一致／停止中、二重起動、認証拒否、起動失敗、通常・異常停止を記録する。
 
-## 接続連動の自動準備（設計、後続実装の合格条件）
+## 接続連動の自動準備
 
 - 手動 IP／policy JSON／busid／timing ID なしの接続から module/daemon/USB 準備、Ready、ClockSync/reference、解放。
 - TCP local/peer と route FD の検証、別 connection/replay/IPv4-mapped/IPv6 scope／DHCP／複数NIC／逆方向到達失敗。
@@ -81,4 +81,4 @@ runtime 配備、helper service、arm64/MSRV は未検証のまま分けて記�
 - 既存 helper の不一致／停止中、管理者認証拒否、不足 tools/modules、daemon/port/firewall 競合と両側 Prepared/Commit。
 - Commit 前の mutation=0、片側失敗の準備 lease 回収、USB 開始後の release barrier、他所有 module/daemon/rule 保持。
 - 新 WiVRn extension／双方向 UDS／次版 helper RPC の版拒否と Bridge OFF 回帰、取消と有界 deadline。
-- root systemd／実USB/IP／Orange Pi と native Mock を分離。現状これらの auto-setup 試験は未実施。
+- root systemd／実USB/IP／Orange Pi と native Mock を分離。SDK／FakeOps／FD／C ABI の検証結果は [AUTOMATIC-BOOTSTRAP-REPORT.md](AUTOMATIC-BOOTSTRAP-REPORT.md)。実 root と統合 runtime の auto-setup 試験は未実施。

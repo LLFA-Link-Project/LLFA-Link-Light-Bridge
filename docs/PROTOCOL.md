@@ -96,3 +96,10 @@ payload は source_clock_id、local_clock_id (u64)、t1/t2/t3 (i64 ns)、計40 b
 request の t2/t3 は0。reply の t1 を outstanding request と照合し、t4 はHMDで採る。
 未知 domain、負の時刻、不正順序／余剰 payload は拒否。同期 frame は lifecycle counter と heartbeat を更新しない。
 採時位置／推定式／期限／再同期は [PHASE-4-TIMING-SPEC.md](PHASE-4-TIMING-SPEC.md) を参照。
+
+## 接続連動の自動準備（2026-10-12）
+
+[AUTOMATIC-BOOTSTRAP.md](AUTOMATIC-BOOTSTRAP.md) に SDK／helper と新 C API、LLBA v1／SCM_RIGHTS の契約を記載。
+Bridge TCP v3、LLBI notification v1、C ABI v1 は維持。manual helper RPC v2、auto helper schema v1、
+compatibility ID は `llfa-usbip-helper-3-auto-20261012`。旧 helper の不一致は中断する。
+[検証報告](AUTOMATIC-BOOTSTRAP-REPORT.md) は Mock／native FD と実 root・実機未検証を分離している。

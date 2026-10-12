@@ -6,13 +6,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UsbInterface {
     pub name: String,
     pub number: u8,
     pub driver: Option<String>,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObservedDevice {
     pub identity: UsbDeviceIdentity,
     pub product: String,
@@ -21,7 +21,7 @@ pub struct ObservedDevice {
     pub device_driver: Option<String>,
     pub via_vhci: bool,
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct InventoryReport {
     pub devices: Vec<ObservedDevice>,
     /// Missing attributes, unplug races and permission errors are visible, never silently ignored.

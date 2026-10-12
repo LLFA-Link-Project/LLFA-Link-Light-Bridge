@@ -48,7 +48,7 @@ pub struct Response {
 }
 pub const RPC_VERSION: u32 = 2;
 /// Bump whenever the privileged helper contract or required behavior changes.
-pub const COMPATIBILITY_ID: &str = "llfa-usbip-helper-2-20261012";
+pub const COMPATIBILITY_ID: &str = "llfa-usbip-helper-3-auto-20261012";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HelperIdentity {

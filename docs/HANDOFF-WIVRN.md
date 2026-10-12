@@ -1,5 +1,29 @@
 # WiVRn 担当 Codex への LLFA Bridge 組み込み指示書
 
+## 自動準備 SDK の実装完了・次の差分作業
+
+Light-Bridge の自動準備本体とC APIは本版で実装済み。
+[実 API](AUTOMATIC-BOOTSTRAP.md) と [検証報告](AUTOMATIC-BOOTSTRAP-REPORT.md) を読み、
+WiVRn b89ffb72 の既存統合へ次の差分を追加する。root／USB実機は未検証。
+
+1. Server child の control TCP FDから llb_bootstrap_new_request を生成し、policy読込／Host生成／Lighthouseより前に送信。
+   llb_bootstrap_createでcoordinator、runtime handleはllb_bootstrap_requireでkernel-only。
+2. 新opt-in extension/hashでSDK JSON payloadを交渉。legacy tags/hashとBridge OFFを維持。候補名でSDK APIを再定義しない。
+3. Clientは映像待機前から actual TCP FD付きLLBA PrepareをMonadoへ送り、双方向replyとgenerationを管理。
+   候補選択・Missing helperの一時管理者認証はClient/launcher UIに追加。
+4. Pi Offerを llb_bootstrap_receive、Host llb_auto_workerでImport Prepare（actual control FD）。
+   helper Preparedをcoordinatorに渡し、双方Preparedでのみ llb_bootstrap_commit。
+5. 両helper Committed後、llb_bootstrap_get_info／applyでserial/timing/instance/IDs/policyを既存Hostに設定。
+   light_bridge_host constructor の別乱数／timing env／手動policy必須を auto branch で置き換える。
+6. info.host_bindのport=0を従来listenで決定し広告。Clientは実peer/scope+portでStart。
+   wait_usb→Lighthouse→publisher/Readyは既存実装を再利用。
+7. publisher join→driver release→detach→Pi unexport→Idle後に両environment Release。
+   bootstrap abortにもprepare lease回収を追加し、次接続はfresh Server child/request/handles。
+
+WiVRn packet/hash、Client UDS接続、UIは追加対象。USB CLI実装はhelper／Bridge側に保持する。
+rootコマンドは temporary-start-auto import/export --acknowledge-development-build。SDK自体は昇格しない。
+manual-mode回帰とauto-mode新試験を分離し、helper/SDKは新 compatibility IDへ更新する。
+
 ## 引き継ぎの基準：既存統合への差分実装
 
 確認済み baseline は **WiVRn b89ffb72、Bridge submodule d765f16**。
@@ -16,11 +40,11 @@
 | driver release→detach と fresh Server child 再接続 | 再利用。追加の daemon／network lease を USB 解放後に回収 |
 | opt-in protocol negotiation／Bridge OFF の従来接続 | 再利用し、bootstrap の新 capability と版拒否・無効時回帰を追加 |
 
-SDK の次版 bootstrap／helper API に依存する部分を区別し、候補関数名を存在する API と扱わない。
+本版 SDK の実在 bootstrap／helper API を使用し、設計上の候補名を API 名として呼ばない。
 既存の manual-policy／Mock／Lighthouse publisher 試験を維持して自動準備試験を追加する。
 下記 Phase 4／Phase 3 部分は既存契約と検証条件であり、再実装の作業一覧ではない。
 
-## WiVRn 接続連動の自動準備（最新要求、設計・未実装）
+## WiVRn 接続連動の自動準備（設計と統合条件）
 
 [AUTOMATIC-BOOTSTRAP-DESIGN.md](AUTOMATIC-BOOTSTRAP-DESIGN.md) を次の実装契約にする。
 WiVRn 接続確立後、listener の固定 Import policy preflight／Lighthouse 初期化より前に BootstrapRequest を送る。
@@ -28,7 +52,7 @@ Client は映像待機前から Monado と双方向 UDS Prepare/Offer/Commit を
 各 TCP socket の local/peer address を取得して交換し、Pi の verified USB/IP endpoint と exact identity を Host へ返す。
 Host helper の準備完了後に Commit と Bridge endpoint を送る。手動 IP／policy JSON／serial／timing ID を通常利用で要求しない。
 Dashboard／Client UI は候補が複数の場合の選択と、一時 helper の管理者承認を扱う。USB 固有操作は helper／Bridge に保持する。
-extension packet／UDS codec／次版 helper bootstrap SDK は新規実装が必要。既存通知 packet に無言で fields を追加しない。
+WiVRn extension／Client双方向UDS接続は追加が必要。UDS codec／helperは本版 SDK を使用し、既存通知 packet に無言で fields を追加しない。
 現在 WiVRn b89ffb72 は d765f16 と新 preflight を実装済みだが、Pi USB/IP endpoint／inventory の自動交換は未実装。
 以下の手動 policy 指示は現行診断経路の説明。auto mode の必須設定として引き継がない。
 

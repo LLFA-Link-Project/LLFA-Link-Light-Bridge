@@ -6,7 +6,7 @@ use std::{
         fd::AsRawFd,
         unix::{fs::MetadataExt, process::CommandExt},
     },
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     thread,
@@ -121,6 +121,37 @@ pub fn start_temporary_service(role: &str, executable: &Path, policy: &Path) -> 
         &AtomicBool::new(false),
     )
 }
+pub fn start_auto_service(role: &str) -> Result<(), String> {
+    if !matches!(role, "export" | "import") || unsafe { libc::geteuid() } != 0 {
+        return Err("fixed role and explicit root authorization required".into());
+    }
+    let dir = format!("/run/llfa-link-light-bridge/temporary-auto-{role}");
+    let executable = Path::new(&dir).join("helper");
+    let auth = Path::new(&dir).join("authorization.json");
+    for p in [&executable, &auth, &PathBuf::from("/usr/bin/systemd-run")] {
+        trusted(p).map_err(|e| e.to_string())?;
+    }
+    let args = vec![
+        format!("--unit=llb-usbip-temporary-auto-{role}"),
+        "--collect".into(),
+        "--service-type=exec".into(),
+        "--property=User=root".into(),
+        "--property=Group=root".into(),
+        "--property=UMask=0077".into(),
+        "--property=Restart=no".into(),
+        "--property=NoNewPrivileges=yes".into(),
+        executable.to_string_lossy().into_owned(),
+        "serve-auto".into(),
+        auth.to_string_lossy().into_owned(),
+    ];
+    capture(
+        Path::new("/usr/bin/systemd-run"),
+        &args,
+        Duration::from_secs(10),
+        &AtomicBool::new(false),
+    )
+    .map(|_| ())
+}
 fn temporary_service_arguments(
     role: &str,
     executable: &Path,
@@ -157,6 +188,15 @@ fn run_program(
     timeout: Duration,
     cancel: &AtomicBool,
 ) -> Result<(), String> {
+    capture(program, args, timeout, cancel).map(|_| ())
+}
+/// Internal runner for fixed typed bootstrap commands. No request-supplied program/argv.
+pub(crate) fn capture(
+    program: &Path,
+    args: &[String],
+    timeout: Duration,
+    cancel: &AtomicBool,
+) -> Result<Vec<u8>, String> {
     let mut child = Command::new(program)
         .args(args)
         .env_clear()
@@ -175,18 +215,22 @@ fn run_program(
         nonblocking(stderr.as_raw_fd()).map_err(|e| e.to_string())?;
         let end = Instant::now() + timeout;
         let mut output = Vec::new();
+        let mut errors = Vec::new();
         loop {
             drain(&mut stdout, &mut output)?;
-            drain(&mut stderr, &mut output)?;
+            drain(&mut stderr, &mut errors)?;
+            if output.len() + errors.len() > 32768 {
+                return Err("command output limit exceeded".into());
+            }
             if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
                 drain(&mut stdout, &mut output)?;
-                drain(&mut stderr, &mut output)?;
+                drain(&mut stderr, &mut errors)?;
                 return if status.success() {
-                    Ok(())
+                    Ok(output)
                 } else {
                     Err(format!(
                         "usbip exit {status}: {}",
-                        String::from_utf8_lossy(&output)
+                        String::from_utf8_lossy(&errors)
                     ))
                 };
             }

@@ -81,3 +81,10 @@ real backend destroy は worker cancel/join のみ。残留 OS 資源は管理�
 
 指示書は調査した実ソースの commit と位置を記録し、新規 adapter を既存 API と区別している。
 両担当は同じ Bridge commit を記録して使用し、フル環境が揃った後で Phase 3 の実機合格証拠を採取する。
+
+## 接続連動の自動準備（2026-10-12）
+
+[AUTOMATIC-BOOTSTRAP.md](AUTOMATIC-BOOTSTRAP.md) に SDK／helper と新 C API、LLBA v1／SCM_RIGHTS の契約を記載。
+Bridge TCP v3、LLBI notification v1、C ABI v1 は維持。manual helper RPC v2、auto helper schema v1、
+compatibility ID は `llfa-usbip-helper-3-auto-20261012`。旧 helper の不一致は中断する。
+[検証報告](AUTOMATIC-BOOTSTRAP-REPORT.md) は Mock／native FD と実 root・実機未検証を分離している。

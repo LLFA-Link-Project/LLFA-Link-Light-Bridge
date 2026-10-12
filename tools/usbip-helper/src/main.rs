@@ -1,4 +1,6 @@
 #[cfg(target_os = "linux")]
+mod auto_server;
+#[cfg(target_os = "linux")]
 mod temporary;
 #[cfg(target_os = "linux")]
 fn main() {
@@ -11,6 +13,10 @@ fn main() {
 fn entry() -> Result<(), String> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.first().and_then(|v| v.to_str()) {
+        Some("temporary-start-auto") => temporary::start_auto(&args[1..]),
+        Some("check-auto") if args.len()==2 => temporary::check_auto(&args[1]),
+        Some("temporary-stop-auto") if args.len()==3 && args[2]=="--runtime-stopped" => temporary::stop_auto(&args[1]),
+        Some("serve-auto") if args.len()==2 => auto_server::serve(std::path::Path::new(&args[1])),
         Some("temporary-start") if args.len() == 3 && args[2] == "--acknowledge-development-build" => {
             temporary::start(std::path::Path::new(&args[1]))
         }

@@ -128,3 +128,10 @@ Stop／同期失効時の metadata 取得は InvalidState。これは較正済�
 `llb_get_pose_diagnostics` は rejected count／last reason（0 accepted、1 clock/inactive、2 policy、3 malformed）。
 
 実装契約と driver timestamp の調査は [Phase 4 補足仕様](PHASE-4-TIMING-SPEC.md) を正とする。
+
+## 接続連動の自動準備（2026-10-12）
+
+[AUTOMATIC-BOOTSTRAP.md](AUTOMATIC-BOOTSTRAP.md) に SDK／helper と新 C API、LLBA v1／SCM_RIGHTS の契約を記載。
+Bridge TCP v3、LLBI notification v1、C ABI v1 は維持。manual helper RPC v2、auto helper schema v1、
+compatibility ID は `llfa-usbip-helper-3-auto-20261012`。旧 helper の不一致は中断する。
+[検証報告](AUTOMATIC-BOOTSTRAP-REPORT.md) は Mock／native FD と実 root・実機未検証を分離している。

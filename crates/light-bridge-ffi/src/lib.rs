@@ -18,6 +18,10 @@ use std::{
 pub const LLB_ABI_VERSION: u32 = 1;
 pub const LLB_HMD: u32 = 0;
 pub const LLB_HOST: u32 = 1;
+#[cfg(target_os = "linux")]
+mod auto;
+#[cfg(target_os = "linux")]
+pub use auto::*;
 
 pub type Callback = Option<unsafe extern "C" fn(*mut c_void, u32, u32, *const ExternalPose)>;
 #[repr(C)]
@@ -55,10 +59,11 @@ pub struct Handle {
     listener: Option<(std::net::TcpListener, EndpointInfo)>,
     peer_host: Option<u64>,
     timing: Option<TimingConfig>,
+    automatic_required: bool,
     #[cfg(target_os = "linux")]
     kernel: Option<(String, light_bridge_usbip::kernel::Policy, u64)>,
 }
-fn kernel_configured(h: &Handle) -> bool {
+fn real_kernel_present(h: &Handle) -> bool {
     #[cfg(target_os = "linux")]
     {
         h.kernel.is_some()
@@ -68,6 +73,9 @@ fn kernel_configured(h: &Handle) -> bool {
         let _ = h;
         false
     }
+}
+fn kernel_configured(h: &Handle) -> bool {
+    real_kernel_present(h) || h.automatic_required
 }
 fn apply_timing(library: &mut Library, config: Option<TimingConfig>) -> Result<()> {
     if let Some(c) = config {
@@ -88,6 +96,9 @@ fn make_connected_library(
     h: &Handle,
     transport: light_bridge_protocol::Transport,
 ) -> Result<Library> {
+    if h.automatic_required && !real_kernel_present(h) {
+        return Err(Error::InvalidState);
+    }
     #[cfg(target_os = "linux")]
     if let Some((socket, policy, instance)) = &h.kernel {
         let backend = Box::new(light_bridge_usbip::helper::KernelUsbIp::new(
@@ -366,6 +377,7 @@ pub unsafe extern "C" fn llb_create(config: *const Config, out: *mut *mut Handle
             listener: None,
             peer_host: None,
             timing: None,
+            automatic_required: false,
             #[cfg(target_os = "linux")]
             kernel: None,
         }));
@@ -443,6 +455,9 @@ unsafe fn endpoint_info(endpoint: *const Endpoint, allow_zero_port: bool) -> Res
 pub unsafe extern "C" fn llb_tcp_listen(handle: *mut Handle, endpoint: *mut Endpoint) -> i32 {
     guard(|| {
         let h = handle.as_mut().ok_or(Error::InvalidArgument)?;
+        if h.automatic_required && !real_kernel_present(h) {
+            return Err(Error::InvalidState);
+        }
         if h.role != LLB_HOST || !matches!(h.library, Library::Unlinked) || h.listener.is_some() {
             return Err(Error::InvalidState);
         }
@@ -477,6 +492,9 @@ pub unsafe extern "C" fn llb_tcp_accept(handle: *mut Handle) -> i32 {
 pub unsafe extern "C" fn llb_tcp_connect(handle: *mut Handle, endpoint: *const Endpoint) -> i32 {
     guard(|| {
         let h = handle.as_mut().ok_or(Error::InvalidArgument)?;
+        if h.automatic_required && !real_kernel_present(h) {
+            return Err(Error::InvalidState);
+        }
         if h.role != LLB_HMD || !matches!(h.library, Library::Unlinked) {
             return Err(Error::InvalidState);
         }

@@ -1,6 +1,6 @@
 # Phase 1 の実装判断と仕様との差分
 
-## 接続連動の自動準備（2026-10-12、設計・未実装）
+## 接続連動の自動準備（2026-10-12、SDK／helper 実装）
 
 ユーザー指定により、通常 mode は WiVRn 接続から双方 IP を取得・交換し、Pi の承認済み単一 Tracker を自動選択、
 exact session policy と timing IDs を自動生成する。module／usbipd／到達制限も helper が準備する。
@@ -9,7 +9,12 @@ policy 手入力は診断用 override に残し、通常の auto mode では必�
 helper の不一致時中断、一時利用選択、installer 後回し、HMD deny と解放順序は維持する。
 双方 Prepared／Commit 前は USB mutation 禁止。Host の事前 policy 必須と Pi の endpoint 待ちによる循環を避ける。
 詳細と source commits、分担、完了条件は [AUTOMATIC-BOOTSTRAP-DESIGN.md](AUTOMATIC-BOOTSTRAP-DESIGN.md)。
-今回の変更は設計文書のみ。現行 d765f16 に自動準備があるとは報告しない。
+SDK／helper の実装契約は [AUTOMATIC-BOOTSTRAP.md](AUTOMATIC-BOOTSTRAP.md)、検証は [AUTOMATIC-BOOTSTRAP-REPORT.md](AUTOMATIC-BOOTSTRAP-REPORT.md)。
+既存 Monado／WiVRn adapter への新 bootstrap 接続と選択 GUI は後続作業。
+初版は private/link-local LAN、USB/IP port 3240、nft、Tracker 28de:2300 に限定する。public IP／global IPv6／NAT／別 network namespace は拒否。
+Arch は cached package database で対象と依存を検査し、既存 package の更新や kernel 更新を拒否する。自動 OS upgrade／database refresh は行わない。
+root 承認は role／UID／loopback／package install の limits に固定し、route FD と inventory から exact policy を生成する。
+FD は接続と namespace の証明であり WiVRn peer の暗号学的認証ではない。実 root 操作／実機 acceptance は未検証。
 
 ## Helper 配備の追加契約（2026-10-12）
 

@@ -23,6 +23,198 @@ pub fn role_name(role: Role) -> &'static str {
         Role::Import => "import",
     }
 }
+pub fn auto_stage(role: Role) -> PathBuf {
+    Path::new(ROOT).join(format!("temporary-auto-{}", role_name(role)))
+}
+fn parse_role(value: &std::ffi::OsStr) -> Result<Role> {
+    match value.to_str() {
+        Some("export") => Ok(Role::Export),
+        Some("import") => Ok(Role::Import),
+        _ => Err("role must be export or import".into()),
+    }
+}
+pub fn check_auto(value: &std::ffi::OsStr) -> Result<()> {
+    let role = parse_role(value)?;
+    let response = light_bridge_usbip::bootstrap_rpc::call(
+        &light_bridge_usbip::bootstrap_rpc::socket(role),
+        light_bridge_usbip::bootstrap_rpc::Envelope::new(
+            role,
+            light_bridge_usbip::bootstrap_rpc::Action::Describe,
+        ),
+        None,
+    )?;
+    response.result?;
+    println!(
+        "automatic helper compatible: role={} pending={} authorization={:?}",
+        role_name(role),
+        response.pending,
+        response.authorization
+    );
+    if response.pending {
+        return Err("environment/USB lease present; inspect/release before a new session".into());
+    }
+    Ok(())
+}
+pub fn start_auto(args: &[std::ffi::OsString]) -> Result<()> {
+    use light_bridge_usbip::{
+        bootstrap::Authorization,
+        bootstrap_rpc::{self, Action, Envelope},
+    };
+    let role=parse_role(args.first().ok_or("Usage: temporary-start-auto export|import --acknowledge-development-build [--allow-loopback] [--allow-package-install]")?)?;
+    let mut acknowledge = false;
+    let mut allow_loopback = false;
+    let mut allow_package_install = false;
+    for arg in &args[1..] {
+        match arg.to_str() {
+            Some("--acknowledge-development-build") => acknowledge = true,
+            Some("--allow-loopback") => allow_loopback = true,
+            Some("--allow-package-install") => allow_package_install = true,
+            _ => return Err("unknown automatic-start flag".into()),
+        }
+    }
+    if !acknowledge {
+        return Err("development build acknowledgement required".into());
+    }
+    if unsafe { libc::geteuid() } != 0 {
+        return Err("automatic temporary-start requires explicit sudo authorization".into());
+    }
+    let uid = std::env::var("SUDO_UID")
+        .map_err(|_| "start-auto through sudo from the runtime user")?
+        .parse()
+        .map_err(|_| "invalid SUDO_UID")?;
+    let gid = std::env::var("SUDO_GID")
+        .map_err(|_| "SUDO_GID required")?
+        .parse()
+        .map_err(|_| "invalid SUDO_GID")?;
+    let auth = Authorization {
+        role,
+        client_uid: uid,
+        client_gid: gid,
+        allow_loopback,
+        allow_package_install,
+    };
+    auth.validate()?;
+    let socket = bootstrap_rpc::socket(role);
+    if exists(&socket)? {
+        let response = bootstrap_rpc::call(&socket, Envelope::new(role, Action::Describe), None)?;
+        response.result?;
+        if response.authorization.client_uid != uid
+            || response.authorization.client_gid != gid
+            || response.authorization.allow_loopback != allow_loopback
+            || response.authorization.allow_package_install != allow_package_install
+        {
+            return Err("existing authorization differs; do not replace/fallback".into());
+        }
+        if response.pending {
+            return Err("existing helper owns resources; inspect/release".into());
+        }
+        return Ok(());
+    }
+    if exists(&Path::new(ROOT).join(format!("{}.sock", role_name(role))))? {
+        return Err(
+            "manual/legacy helper socket exists; automatic capability required, no fallback".into(),
+        );
+    }
+    for marker in installation_markers(role) {
+        if exists(&marker)? {
+            return Err("installed helper stopped or lacks automatic capability; update/start it, no temporary fallback".into());
+        }
+    }
+    protected_dir(Path::new(ROOT), 0o711)?;
+    protected_dir(Path::new("/var/lib/llfa-link-light-bridge"), 0o700)?;
+    let state = Path::new("/var/lib/llfa-link-light-bridge");
+    for name in [
+        format!("{}.json", role_name(role)),
+        format!("{}.json.new", role_name(role)),
+        format!("{}-environment.json", role_name(role)),
+        format!("{}-environment.json.new", role_name(role)),
+    ] {
+        if exists(&state.join(name))? {
+            return Err("residual USB/environment journal; inspect before starting".into());
+        }
+    }
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(state.join(format!("{}.lock", role_name(role))))
+        .map_err(|e| e.to_string())?;
+    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        return Err("helper role already owned".into());
+    }
+    let dir = auto_stage(role);
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&dir)
+        .map_err(|e| format!("staging refused; no overwrite: {e}"))?;
+    protected_dir(&dir, 0o700)?;
+    let mut binary = Vec::new();
+    File::open("/proc/self/exe")
+        .map_err(|e| e.to_string())?
+        .take(64 * 1024 * 1024 + 1)
+        .read_to_end(&mut binary)
+        .map_err(|e| e.to_string())?;
+    if binary.len() > 64 * 1024 * 1024 {
+        return Err("binary staging limit exceeded".into());
+    }
+    write_new(&dir.join("helper"), 0o700, &binary)?;
+    write_new(
+        &dir.join("authorization.json"),
+        0o600,
+        &serde_json::to_vec(&auth).map_err(|e| e.to_string())?,
+    )?;
+    drop(lock);
+    command::start_auto_service(role_name(role))?;
+    let end = Instant::now() + Duration::from_secs(5);
+    while !exists(&socket)? {
+        if Instant::now() >= end {
+            return Err("automatic service not ready; keep stage and inspect journalctl".into());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let response = bootstrap_rpc::call(&socket, Envelope::new(role, Action::Describe), None)?;
+    response.result?;
+    if response.pending {
+        return Err("automatic helper has residual state".into());
+    }
+    println!(
+        "automatic helper ready: role={}; policy/IP/Tracker are resolved on the connection",
+        role_name(role)
+    );
+    Ok(())
+}
+pub fn stop_auto(value: &std::ffi::OsStr) -> Result<()> {
+    use light_bridge_usbip::bootstrap_rpc::{self, Action, Envelope};
+    let role = parse_role(value)?;
+    let response = bootstrap_rpc::call(
+        &bootstrap_rpc::socket(role),
+        Envelope::new(role, Action::Shutdown),
+        None,
+    )?;
+    response.result?;
+    let end = Instant::now() + Duration::from_secs(5);
+    while exists(&bootstrap_rpc::socket(role))? || exists(&auto_stage(role))? {
+        if Instant::now() >= end {
+            return Err("shutdown acknowledged but stage/socket remains; inspect".into());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    println!("automatic temporary helper stopped with no owned leases");
+    Ok(())
+}
+pub fn remove_auto_stage(role: Role) -> Result<()> {
+    let dir = auto_stage(role);
+    command::trusted(&dir).map_err(|e| e.to_string())?;
+    for name in ["authorization.json", "helper"] {
+        let path = dir.join(name);
+        command::trusted(&path).map_err(|e| e.to_string())?;
+        fs::remove_file(path).map_err(|e| e.to_string())?;
+    }
+    fs::remove_dir(dir).map_err(|e| e.to_string())
+}
 pub fn stage(role: Role) -> PathBuf {
     Path::new(ROOT).join(format!("temporary-{}", role_name(role)))
 }

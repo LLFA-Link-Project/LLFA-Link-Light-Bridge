@@ -1,5 +1,24 @@
 # Monado 担当 Codex への LLFA Bridge 組み込み指示書
 
+## 自動準備 SDK の実装完了・次の差分作業
+
+Light-Bridge側の自動準備本体は本版で実装済み。
+[実 API](AUTOMATIC-BOOTSTRAP.md) と [検証報告](AUTOMATIC-BOOTSTRAP-REPORT.md) を読む。
+Monado 06dd3c29f の既存 adapter を再利用し、auto branch の接続部分を追加する。root／USB実機は未検証。
+
+1. auto mode は policy/IDs 未決定でも arpara HEAD と UDS listener を生成。manual-policy mode は明示診断用に残す。
+2. runtime handle を llb_bootstrap_require で kernel-only にする。timing/kernel は別乱数・env値で先に設定しない。
+3. Clientから LLBA Prepare と TCP FDを受け、llb_auto_helper_statusで導入状態を取得。Missingだけ Client/launcherに一時認証を依頼。
+4. llb_auto_worker で Export Prepare。単一候補は自動選択、複数は stamp付き Candidates/Select をClientと交換。
+5. helper PreparedをOfferにしてClient経由でHostへ返す。双方PreparedのCommitを受けてhelperへ適用。
+6. helper Committedを llb_bootstrap_apply で設定。instance/session/timing/serialはplan値。
+   従来の kernel preflight→TCP→Start/Prepare→ClockSync/pose に合流する。
+7. USB unexportとIdleの後にExport environment Release。pending helperをruntime終了だけでkillしない。
+
+rootコマンドは temporary-start-auto export --acknowledge-development-build。選択/認証UIは別担当の追加対象。
+SDKのpose／yaw correction／IMU／描画経路は再実装しない。helper/SDKを新 compatibility IDへ揃える。
+本API接続・WiVRn経由UI・native/ARM64 runtimeビルド結果を分けて提出する。
+
 ## 引き継ぎの基準：既存統合への差分実装
 
 確認済み baseline は **Monado 06dd3c29f、Bridge submodule d765f16**。
@@ -15,19 +34,19 @@
 | stop／Idle／cleanup 確認後の handle 再生成、残留資源の拒否 | 再利用し、追加する environment lease の解放を USB 解放後に接続 |
 | arpara IMU／描画、既定 OFF の実験的 yaw correction | 再利用。bootstrap 作業で再実装・較正完了扱いにしない |
 
-SDK に新しい bootstrap codec／helper 操作が入ってから既存 adapter へ接続する。
+本版 SDK の実在 bootstrap codec／helper 操作を既存 adapter へ接続する。
 SDK にない関数を既存 API として呼ばない。既存の manual-policy 試験と Bridge OFF 回帰を維持し、
 auto mode の新試験を追加する。下記 Phase 4／Phase 3 部分は既存契約と検証条件であり、
 すでに実装された機能をもう一度作る作業一覧ではない。
 
-## WiVRn 接続連動の自動準備（最新要求、設計・未実装）
+## WiVRn 接続連動の自動準備（設計と統合条件）
 
 [AUTOMATIC-BOOTSTRAP-DESIGN.md](AUTOMATIC-BOOTSTRAP-DESIGN.md) を次の実装契約にする。
 通常 auto mode では IP／policy JSON／busid／timing ID の手入力を不要にする。
 UDS listener と arpara HEAD は policy 未決定でも生成し、Client の双方向 Prepare → Offer → Commit を worker で処理する。
 Pi の単一承認候補を自動選択、複数なら Client UI へ候補を返す。root helper が実 inventory を再検証し exact session plan を返す。
 route は WiVRn の実 TCP local/peer と FD から得る。module／usbipd／必要な許可された環境設定は helper が準備する。
-Commit 前の USB mutation は禁止。現行 Policy equality を緩めず、許可 limits と session policy を分離する次版 SDK が必要。
+Commit 前の USB mutation は禁止。許可 limits と session policy を分離する本版 SDK を使用する。
 現在 Monado 06dd3c29f は d765f16 に更新済みで新 preflight を実装しているが、自動 bootstrap は未実装。
 以下の手動 policy 指示は現行診断経路の説明。auto mode の必須設定として引き継がない。
 
