@@ -4,6 +4,10 @@ installer／一時利用の選択は [Helper 利用契約](HELPER-DEPLOYMENT-CON
 開発用の一時起動と互換性確認は [TEMPORARY-HELPER.md](TEMPORARY-HELPER.md) を参照。
 installer／選択 GUI は未実装。以下は従来の手動永続配備手順。
 
+手動 IP／identity／module／daemon 準備を置き換える次の設計は
+[AUTOMATIC-BOOTSTRAP-DESIGN.md](AUTOMATIC-BOOTSTRAP-DESIGN.md)。現時点では未実装であり、
+下記の前提条件を現行 code が自動準備するとは扱わない。
+
 この文書はコードの使用・試験手順。実 USB/IP 転送が検証済みという報告ではない。
 Orange Pi に Tracker、Host に vhci_hcd を配置し、Monado/WiVRn は一般ユーザーで動かす。
 低遅延の pose／IMU 経路は両 runtime 内、特権 helper と標準 usbipd は別プロセス。

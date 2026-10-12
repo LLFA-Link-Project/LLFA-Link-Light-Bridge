@@ -91,3 +91,11 @@ Dependencies must be cached before offline commands; `cargo fetch --locked` prep
 - Check identity and exact policy before mutation on the same connection. A mismatch or unknown/stopped installation must not silently use a temporary helper or Mock.
 - Temporary startup requires explicit administrator approval of the development binary, protected /run staging and fixed transient systemd arguments. Never enable persistent units or add broad sudoers rules.
 - Normal temporary shutdown requires runtime acknowledgement and an empty ownership journal. Retain uncertain resources; no automatic journal removal or immediate shutdown on runtime exit.
+
+## Connection-driven automatic setup (design, not implemented)
+
+- Follow docs/AUTOMATIC-BOOTSTRAP-DESIGN.md for the next implementation. Default opt-in auto mode must derive/exchange addresses from the WiVRn connection and resolve exact Tracker identity without manual IP/policy/busid/timing-ID entry.
+- Bootstrap precedes Lighthouse and stream readiness. Create the Monado listener before resolving policy; exchange Prepare/Offer/Commit and require both sides prepared before USB mutation.
+- Automatically select one supported, authorized candidate; require selection for ambiguity and always deny the HMD. Keep root authorization limits separate from immutable per-session exact policy.
+- Helper prepares allowed modules, managed usbipd and scoped network access. Preserve initial administrator authorization, helper compatibility rejection, dedicated workers and resource journals. Installer is deferred.
+- Treat the bootstrap protocol, helper operations and UI as new work, not existing hooks. Do not loosen current exact-policy checks to implement dynamic addresses.

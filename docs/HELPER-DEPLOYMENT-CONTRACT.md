@@ -5,6 +5,11 @@ RPC v2 の互換性 preflight と C API を先に実装した。
 利用手順／実装範囲／未検証事項は [TEMPORARY-HELPER.md](TEMPORARY-HELPER.md) を参照。
 installer、socket activation、Dashboard の選択 UI／自動認証は未実装。
 
+最新要求の通常利用は [AUTOMATIC-BOOTSTRAP-DESIGN.md](AUTOMATIC-BOOTSTRAP-DESIGN.md) に従い、
+WiVRn 接続から route と単一 Tracker を選び、policy と USB/IP 初期準備を自動化する。
+これには許可 limits と session policy の分離・次版 helper 契約が必要で、まだ未実装。
+以下の現行 exact-policy／一時 CLI は診断・開発経路として維持し、互換性拒否を緩めない。
+
 ## 利用判断
 
 USB mutation、Bridge session の開始、Lighthouse 初期化より前に、両 runtime は

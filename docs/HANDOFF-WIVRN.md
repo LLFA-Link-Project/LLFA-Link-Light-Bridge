@@ -1,5 +1,17 @@
 # WiVRn 担当 Codex への LLFA Bridge 組み込み指示書
 
+## WiVRn 接続連動の自動準備（最新要求、設計・未実装）
+
+[AUTOMATIC-BOOTSTRAP-DESIGN.md](AUTOMATIC-BOOTSTRAP-DESIGN.md) を次の実装契約にする。
+WiVRn 接続確立後、listener の固定 Import policy preflight／Lighthouse 初期化より前に BootstrapRequest を送る。
+Client は映像待機前から Monado と双方向 UDS Prepare/Offer/Commit を処理する。
+各 TCP socket の local/peer address を取得して交換し、Pi の verified USB/IP endpoint と exact identity を Host へ返す。
+Host helper の準備完了後に Commit と Bridge endpoint を送る。手動 IP／policy JSON／serial／timing ID を通常利用で要求しない。
+Dashboard／Client UI は候補が複数の場合の選択と、一時 helper の管理者承認を扱う。USB 固有操作は helper／Bridge に保持する。
+extension packet／UDS codec／次版 helper bootstrap SDK は新規実装が必要。既存通知 packet に無言で fields を追加しない。
+現在 WiVRn b89ffb72 は d765f16 と新 preflight を実装済みだが、Pi USB/IP endpoint／inventory の自動交換は未実装。
+以下の手動 policy 指示は現行診断経路の説明。auto mode の必須設定として引き継がない。
+
 ## Helper 配備の追加要求（2026-10-12）
 
 [Helper 利用契約](HELPER-DEPLOYMENT-CONTRACT.md) を次の導入設計に適用する。
@@ -9,7 +21,8 @@ SDK／CLI の handshake と一時起動は本版で追加。installer と選択 
 [一時利用手順](TEMPORARY-HELPER.md) に従って、まず開発者が CLI で起動する。
 WiVRn `16bd3529` の `server/light_bridge_host.cpp:45` の kernel 設定成功後、`:50` の listener 作成より前に
 setup worker で `llb_check_kernel_usbip(handle)` を追加する。失敗なら広告／tracking 初期化を中断して診断する。
-現 checkout にはこの新 API 呼出は未追加。SDK／helper／WiVRn を同じ本版へ更新し、root RPC v1 と混在させない。
+更新確認: WiVRn b89ffb72 で listener 作成前の新 preflight が実装され、submodule は d765f16。
+SDK／helper／WiVRn は同じ版を使用し、root RPC v1 と混在させない。
 Dashboard の管理者認証は後続。CLI 停止は通常 cleanup 完了後、runtime user が明示要求する。
 
 ## 目的と前提

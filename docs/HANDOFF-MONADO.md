@@ -1,5 +1,16 @@
 # Monado 担当 Codex への LLFA Bridge 組み込み指示書
 
+## WiVRn 接続連動の自動準備（最新要求、設計・未実装）
+
+[AUTOMATIC-BOOTSTRAP-DESIGN.md](AUTOMATIC-BOOTSTRAP-DESIGN.md) を次の実装契約にする。
+通常 auto mode では IP／policy JSON／busid／timing ID の手入力を不要にする。
+UDS listener と arpara HEAD は policy 未決定でも生成し、Client の双方向 Prepare → Offer → Commit を worker で処理する。
+Pi の単一承認候補を自動選択、複数なら Client UI へ候補を返す。root helper が実 inventory を再検証し exact session plan を返す。
+route は WiVRn の実 TCP local/peer と FD から得る。module／usbipd／必要な許可された環境設定は helper が準備する。
+Commit 前の USB mutation は禁止。現行 Policy equality を緩めず、許可 limits と session policy を分離する次版 SDK が必要。
+現在 Monado 06dd3c29f は d765f16 に更新済みで新 preflight を実装しているが、自動 bootstrap は未実装。
+以下の手動 policy 指示は現行診断経路の説明。auto mode の必須設定として引き継がない。
+
 ## Helper 配備の追加要求（2026-10-12）
 
 [Helper 利用契約](HELPER-DEPLOYMENT-CONTRACT.md) を次の導入設計に適用する。
@@ -9,7 +20,8 @@ SDK／CLI の handshake と一時起動は本版で追加。installer と選択 
 [一時利用手順](TEMPORARY-HELPER.md) に従って、まず開発者が CLI で起動する。
 Monado `978e79022` の `target_llfa_bridge.cpp:84` の kernel 設定成功後、`:333` の TCP 接続より前に
 control/setup worker で `llb_check_kernel_usbip(handle)` を追加する。失敗なら Start 試行を中断して診断する。
-現 checkout にはこの新 API 呼出は未追加。SDK／helper／Monado を同じ本版へ更新し、root RPC v1 と混在させない。
+更新確認: Monado 06dd3c29f で Start worker の新 preflight が実装され、submodule は d765f16。
+SDK／helper／Monado は同じ版を使用し、root RPC v1 と混在させない。
 USB 操作前の判定と既存 cleanup barrier を維持する。CLI 停止は通常 cleanup 完了後、runtime user が明示要求する。
 
 ## 目的と前提

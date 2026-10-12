@@ -1,5 +1,16 @@
 # Phase 1 の実装判断と仕様との差分
 
+## 接続連動の自動準備（2026-10-12、設計・未実装）
+
+ユーザー指定により、通常 mode は WiVRn 接続から双方 IP を取得・交換し、Pi の承認済み単一 Tracker を自動選択、
+exact session policy と timing IDs を自動生成する。module／usbipd／到達制限も helper が準備する。
+policy 手入力は診断用 override に残し、通常の auto mode では必須にしない。複数候補と初回管理者認証だけ利用者が操作する。
+固定 root Policy を緩めず、root の許可 limits と接続ごとの exact session plan に分離する次版 helper 契約が必要。
+helper の不一致時中断、一時利用選択、installer 後回し、HMD deny と解放順序は維持する。
+双方 Prepared／Commit 前は USB mutation 禁止。Host の事前 policy 必須と Pi の endpoint 待ちによる循環を避ける。
+詳細と source commits、分担、完了条件は [AUTOMATIC-BOOTSTRAP-DESIGN.md](AUTOMATIC-BOOTSTRAP-DESIGN.md)。
+今回の変更は設計文書のみ。現行 d765f16 に自動準備があるとは報告しない。
+
 ## Helper 配備の追加契約（2026-10-12）
 
 ユーザー指定により、導入済み helper は互換性一致時だけ利用し、不一致なら Bridge 開始を中断して
