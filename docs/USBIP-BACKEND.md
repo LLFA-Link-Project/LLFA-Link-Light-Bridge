@@ -1,8 +1,8 @@
 # Phase 3 Linux USB/IP Backend と helper
 
-今後の installer／互換性確認／一時利用の選択は
-[Helper 利用契約](HELPER-DEPLOYMENT-CONTRACT.md) に従う。これらは現時点では未実装。
-以下は現行の手動配備手順であり、互換性 preflight や自動導入があるとは扱わない。
+installer／一時利用の選択は [Helper 利用契約](HELPER-DEPLOYMENT-CONTRACT.md) に従う。
+開発用の一時起動と互換性確認は [TEMPORARY-HELPER.md](TEMPORARY-HELPER.md) を参照。
+installer／選択 GUI は未実装。以下は従来の手動永続配備手順。
 
 この文書はコードの使用・試験手順。実 USB/IP 転送が検証済みという報告ではない。
 Orange Pi に Tracker、Host に vhci_hcd を配置し、Monado/WiVRn は一般ユーザーで動かす。
@@ -40,8 +40,10 @@ JSON の未知フィールド、HMD `2c30:1050`、interface busid、空 serial�
 runtime は同じ expected device/role/remote を含む設定コピーを C ABI に渡す。
 これを変えても helper の root policy／認証 UID を変更できない。
 
-RPC: 4-byte big-endian JSON length + ≤4096 bytes、version=1。
-固定 Action は Acquire／Release／Inspect。SO_PEERCRED の UID と root policy を照合。
+RPC: 4-byte big-endian JSON length + ≤4096 bytes、version=2、専用 compatibility ID。
+固定 Action は Describe／Acquire／Release／Inspect／Shutdown（一時 helper のみ）。
+操作前に同一接続上の Describe で package／ID／全 policy を照合。旧 RPC v1 は拒否する。
+SO_PEERCRED の UID と root policy を照合。root の Describe は読取専用で許可する。
 proxy は相手の UID=0 と socket owner=root を照合する。
 helper socket は `/run/llfa-link-light-bridge/{export,import}.sock`、root:client_gid、0660。
 親 directory は root-owned 0711、state directory は root-owned 0700。

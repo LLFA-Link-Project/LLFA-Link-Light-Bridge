@@ -21,6 +21,8 @@ use std::{
 };
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Action {
+    Describe,
+    Shutdown,
     Acquire,
     Release,
     Inspect,
@@ -29,6 +31,7 @@ pub enum Action {
 #[serde(deny_unknown_fields)]
 pub struct Request {
     pub version: u32,
+    pub compatibility_id: String,
     pub instance: u64,
     pub session: u64,
     pub action: Action,
@@ -39,8 +42,59 @@ pub struct Request {
 #[serde(deny_unknown_fields)]
 pub struct Response {
     pub version: u32,
+    pub identity: HelperIdentity,
     pub result: KResult<Option<u32>>,
     pub pending: bool,
+}
+pub const RPC_VERSION: u32 = 2;
+/// Bump whenever the privileged helper contract or required behavior changes.
+pub const COMPATIBILITY_ID: &str = "llfa-usbip-helper-2-20261012";
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HelperIdentity {
+    pub compatibility_id: String,
+    pub package_version: String,
+    pub build_revision: String,
+    pub policy: Policy,
+}
+impl HelperIdentity {
+    pub fn current(policy: &Policy) -> Self {
+        Self {
+            compatibility_id: COMPATIBILITY_ID.into(),
+            package_version: env!("CARGO_PKG_VERSION").into(),
+            build_revision: option_env!("LLB_BUILD_REVISION")
+                .unwrap_or("unspecified")
+                .into(),
+            policy: policy.clone(),
+        }
+    }
+}
+pub fn validate_response(response: &Response, policy: &Policy) -> KResult<()> {
+    if response.version != RPC_VERSION
+        || response.identity.compatibility_id != COMPATIBILITY_ID
+        || response.identity.package_version != env!("CARGO_PKG_VERSION")
+    {
+        return Err(format!(
+            "helper update required: expected {COMPATIBILITY_ID}/{} RPC {RPC_VERSION}; actual {}/{} RPC {} build {}",
+            env!("CARGO_PKG_VERSION"), response.identity.compatibility_id,
+            response.identity.package_version, response.version, response.identity.build_revision
+        ));
+    }
+    if &response.identity.policy != policy {
+        return Err("helper policy differs from runtime policy".into());
+    }
+    Ok(())
+}
+pub fn describe_request(policy: &Policy) -> Request {
+    Request {
+        version: RPC_VERSION,
+        compatibility_id: COMPATIBILITY_ID.into(),
+        instance: 1,
+        session: 0,
+        action: Action::Describe,
+        device: policy.device.clone(),
+        runtime_released: false,
+    }
 }
 pub fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
     let mut cred = libc::ucred {
@@ -128,15 +182,27 @@ pub fn dispatch<O: KernelOps, J: Journal>(
     r: Request,
 ) -> Response {
     let result = (|| {
-        if uid != engine.policy.client_uid
-            || r.version != 1
+        if (uid != engine.policy.client_uid && !(uid == 0 && matches!(r.action, Action::Describe)))
+            || r.version != RPC_VERSION
+            || r.compatibility_id != COMPATIBILITY_ID
             || r.instance == 0
-            || r.session == 0
+            || (r.session == 0 && !matches!(r.action, Action::Describe | Action::Shutdown))
             || r.device != engine.policy.device
         {
             return Err("peer/version/owner/device denied".into());
         }
         match r.action {
+            Action::Describe => Ok(None),
+            Action::Shutdown => {
+                if !r.runtime_released || engine.record().is_some() {
+                    Err(
+                        "shutdown denied: runtime release and empty ownership journal required"
+                            .into(),
+                    )
+                } else {
+                    Ok(None)
+                }
+            }
             Action::Acquire => engine.acquire(r.instance, r.session),
             Action::Release => engine
                 .release(r.instance, r.session, r.runtime_released)
@@ -158,7 +224,8 @@ pub fn dispatch<O: KernelOps, J: Journal>(
         error
     });
     Response {
-        version: 1,
+        version: RPC_VERSION,
+        identity: HelperIdentity::current(&engine.policy),
         result,
         pending: engine.record().is_some(),
     }
@@ -223,6 +290,49 @@ fn connect_cancelable(path: &Path, cancel: &AtomicBool) -> io::Result<UnixStream
         thread::sleep(Duration::from_millis(1));
     }
 }
+pub fn trusted_connection(path: &Path, cancel: &AtomicBool) -> KResult<UnixStream> {
+    use std::os::unix::fs::FileTypeExt;
+    // Validate both pathname ancestors and the actual peer. Do not follow socket symlinks.
+    crate::command::trusted(path.parent().ok_or("socket parent missing")?)
+        .map_err(|e| e.to_string())?;
+    let m = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    if !m.file_type().is_socket() || m.uid() != 0 || m.mode() & 0o007 != 0 {
+        return Err("helper socket requires root ownership and no other-user access".into());
+    }
+    let stream = connect_cancelable(path, cancel).map_err(|e| e.to_string())?;
+    if peer_uid(&stream).map_err(|e| e.to_string())? != 0 {
+        return Err("helper peer is not root".into());
+    }
+    Ok(stream)
+}
+/// Non-mutating handshake. Never interprets timeout/refusal as an absent installation.
+pub fn probe_helper(path: &Path, policy: &Policy) -> KResult<Response> {
+    let cancel = AtomicBool::new(false);
+    let mut stream = trusted_connection(path, &cancel)?;
+    let end = Instant::now() + Duration::from_secs(3);
+    send(&mut stream, &describe_request(policy), end, &cancel)?;
+    let response: Response = receive(&mut stream, end, &cancel)
+        .map_err(|e| format!("helper handshake failed; update or diagnose helper: {e}"))?;
+    validate_response(&response, policy)?;
+    response.result.clone()?;
+    Ok(response)
+}
+fn verified_exchange(
+    stream: &mut UnixStream,
+    policy: &Policy,
+    request: &Request,
+    cancel: &AtomicBool,
+) -> KResult<Response> {
+    let end = Instant::now() + Duration::from_secs(10);
+    send(stream, &describe_request(policy), end, cancel)?;
+    let hello: Response = receive(stream, end, cancel)?;
+    validate_response(&hello, policy)?;
+    hello.result?;
+    send(stream, request, end, cancel)?;
+    let response: Response = receive(stream, end, cancel)?;
+    validate_response(&response, policy)?;
+    Ok(response)
+}
 /// In-process USB backend: fixed helper socket + expected policy, independent session ownership.
 /// Blocking methods are meant for UsbManager control workers, never a pose query/callback.
 pub struct KernelUsbIp {
@@ -247,6 +357,16 @@ impl KernelUsbIp {
     pub fn set_cancel(&mut self, cancel: Arc<AtomicBool>) {
         self.cancel = cancel;
     }
+    pub fn preflight(&self) -> Result<()> {
+        let response = probe_helper(&self.socket, &self.policy).map_err(|e| {
+            eprintln!("USB/IP helper preflight: {e}");
+            Error::Protocol
+        })?;
+        if response.pending {
+            return Err(Error::Ownership);
+        }
+        Ok(())
+    }
     fn request(
         &mut self,
         session: u64,
@@ -258,30 +378,22 @@ impl KernelUsbIp {
             return Err(Error::DeviceDenied);
         }
         let mut stream =
-            connect_cancelable(&self.socket, &self.cancel).map_err(|_| Error::Disconnected)?;
-        // Ensure the server is actually root; an unprivileged lookalike is not a trusted helper.
-        if peer_uid(&stream).map_err(|_| Error::Ownership)? != 0 {
-            return Err(Error::Ownership);
-        }
-        let meta = std::fs::metadata(&self.socket).map_err(|_| Error::Ownership)?;
-        if meta.uid() != 0 {
-            return Err(Error::Ownership);
-        }
-        let end = Instant::now() + Duration::from_secs(10);
+            trusted_connection(&self.socket, &self.cancel).map_err(|_| Error::Ownership)?;
         let r = Request {
-            version: 1,
+            version: RPC_VERSION,
+            compatibility_id: COMPATIBILITY_ID.into(),
             instance: self.instance,
             session,
             action,
             device: device.clone(),
             runtime_released: released,
         };
-        send(&mut stream, &r, end, &self.cancel).map_err(|_| Error::Disconnected)?;
-        let response: Response =
-            receive(&mut stream, end, &self.cancel).map_err(|_| Error::Disconnected)?;
-        if response.version != 1 {
-            return Err(Error::Protocol);
-        }
+        // Same connection for handshake and mutation: a new peer must pass again.
+        let response =
+            verified_exchange(&mut stream, &self.policy, &r, &self.cancel).map_err(|e| {
+                eprintln!("USB/IP helper handshake: {e}");
+                Error::Protocol
+            })?;
         response.result.map_err(|e| {
             eprintln!("USB/IP helper: {e}");
             if self.policy.role == Role::Export {
@@ -329,6 +441,85 @@ impl UsbTransferBackend for KernelUsbIp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn incompatible_peer_receives_no_mutation_on_the_verified_connection() {
+        let mut device = UsbDeviceIdentity::mock();
+        device.busid = "1-3.3".into();
+        device.sysfs_path = "/sys/devices/mock/1-3.3".into();
+        let policy = Policy {
+            role: Role::Export,
+            client_uid: 1000,
+            client_gid: 1000,
+            device,
+            remote: "192.0.2.1:3240".parse().unwrap(),
+        };
+        for compatible in [false, true] {
+            let (mut client, mut server) = UnixStream::pair().unwrap();
+            let p = policy.clone();
+            let worker = thread::spawn(move || {
+                let cancel = AtomicBool::new(false);
+                let end = Instant::now() + Duration::from_secs(1);
+                let describe: Request = receive(&mut server, end, &cancel).unwrap();
+                assert!(matches!(describe.action, Action::Describe));
+                let mut hello = Response {
+                    version: RPC_VERSION,
+                    identity: HelperIdentity::current(&p),
+                    result: Ok(None),
+                    pending: false,
+                };
+                if !compatible {
+                    hello.identity.compatibility_id = "incompatible".into();
+                }
+                send(&mut server, &hello, end, &cancel).unwrap();
+                let next = receive::<Request>(&mut server, end, &cancel);
+                if compatible {
+                    assert!(matches!(next.unwrap().action, Action::Acquire));
+                    send(&mut server, &hello, end, &cancel).unwrap();
+                } else {
+                    assert!(next.is_err());
+                }
+            });
+            let mut acquire = describe_request(&policy);
+            acquire.action = Action::Acquire;
+            acquire.session = 1;
+            let result = verified_exchange(&mut client, &policy, &acquire, &AtomicBool::new(false));
+            assert_eq!(result.is_ok(), compatible);
+            drop(client);
+            worker.join().unwrap();
+        }
+    }
+    #[test]
+    fn identity_and_exact_policy_are_required_even_with_equal_package_versions() {
+        let mut device = UsbDeviceIdentity::mock();
+        device.busid = "1-3.3".into();
+        device.sysfs_path = "/sys/devices/mock/1-3.3".into();
+        let policy = Policy {
+            role: Role::Export,
+            client_uid: 1000,
+            client_gid: 1000,
+            device,
+            remote: "192.0.2.1:3240".parse().unwrap(),
+        };
+        let mut response = Response {
+            version: RPC_VERSION,
+            identity: HelperIdentity::current(&policy),
+            result: Ok(None),
+            pending: false,
+        };
+        validate_response(&response, &policy).unwrap();
+        response.identity.compatibility_id = "old".into();
+        assert!(validate_response(&response, &policy)
+            .unwrap_err()
+            .contains("update required"));
+        response.identity = HelperIdentity::current(&policy);
+        response.identity.policy.client_uid += 1;
+        assert!(validate_response(&response, &policy)
+            .unwrap_err()
+            .contains("policy"));
+        response.identity = HelperIdentity::current(&policy);
+        response.version = 1;
+        assert!(validate_response(&response, &policy).is_err());
+    }
     #[test]
     fn peer_credentials_packet_limits_and_cancel() {
         let (mut a, mut b) = UnixStream::pair().unwrap();

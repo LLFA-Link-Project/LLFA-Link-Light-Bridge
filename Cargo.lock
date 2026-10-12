@@ -379,6 +379,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "light-bridge-usbip",
+ "serde_json",
 ]
 
 [[package]]

@@ -62,3 +62,13 @@ runtime 配備、helper service、arm64/MSRV は未検証のまま分けて記�
 - native libstdc++ steady_clock と CLOCK_MONOTONIC の bracket比較。
 
 実結果は [Phase 4 報告](PHASE-4-REPORT.md)。実ドライバ・Pi・融合の試験とは区別する。
+
+## 開発用一時 helper
+
+- 同一 package version の異なる compatibility ID／旧 RPC v1／異なる全 policy は拒否する。
+- UnixStream pair の handshake 不一致で Acquire を送らないこと、一致時に同じ stream 上で操作すること。
+- Mock kernel engine の Describe は非 mutation。不一致要求で OS calls=0、空 journal／release ack の shutdown gate、所有記録保持。
+- 固定 transient service argv、任意 role／program／policy path 拒否。policy の絶対 path／size／symlink／HMD 拒否。
+- C shared/static smoke の新 API symbol と null handle 拒否、未設定 handle の InvalidState。
+- 実 systemd／sudo／root staging／正常 stage cleanup／異常 journal recovery／ARM64 は未検証。
+  実試験時は導入済み一致／不一致／停止中、二重起動、認証拒否、起動失敗、通常・異常停止を記録する。

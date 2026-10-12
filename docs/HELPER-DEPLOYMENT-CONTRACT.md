@@ -1,8 +1,9 @@
 # Helper の導入・互換性・一時利用契約
 
-ユーザー合意（2026-10-12）。本書は今後の実装契約であり、installer、
-互換性 preflight、socket activation、一時起動 UI はまだ実装済みではない。
-現行 helper は RPC version=1 を検証するが、製品版／build の一致確認は行わない。
+ユーザー合意（2026-10-12）。installer は後回しとし、開発用 CLI の一時起動、
+RPC v2 の互換性 preflight と C API を先に実装した。
+利用手順／実装範囲／未検証事項は [TEMPORARY-HELPER.md](TEMPORARY-HELPER.md) を参照。
+installer、socket activation、Dashboard の選択 UI／自動認証は未実装。
 
 ## 利用判断
 
@@ -28,7 +29,9 @@ release → detach → unexport と journal 照合を維持し、判定失敗を
 Cargo の package version（現在 0.1.0）や RPC version=1 だけでは build の一致を判断できない。
 専用の helper compatibility ID を runtime と helper の build に埋め込み、初期実装では完全一致を要求する。
 製品 version、build revision、RPC version、role、必要な capability も診断に含める。
-詳細の ID 発行方式と RPC schema は実装時に確定し、protocol／ABI／検証文書へ反映する。
+現在の compatibility ID は `llfa-usbip-helper-2-20261012`。privileged contract の変更で更新する。
+RPC v2 は ID と全 policy を検証する。Git revision の完全一致ではなく専用 ID と package version の一致。
+任意 compile-time build revision は診断専用で、未設定は unspecified とする。
 
 インストール情報だけを信用せず、root 所有／保護された配置と実際に接続した root peer を検証し、
 非 mutation の handshake で動作中 helper の識別情報を照合する。Acquire より前に照合を完了し、

@@ -1,11 +1,16 @@
 # WiVRn 担当 Codex への LLFA Bridge 組み込み指示書
 
-## Helper 配備の追加要求（2026-10-12、未実装）
+## Helper 配備の追加要求（2026-10-12）
 
 [Helper 利用契約](HELPER-DEPLOYMENT-CONTRACT.md) を次の導入設計に適用する。
 導入済み互換 helper を利用、不一致なら開始中断と更新要求、未導入だけ installer／一時管理者利用の選択。
 Dashboard／launcher が選択と診断を扱い、Server の pose 経路で対話や管理者コマンドを実行しない。
-SDK 側 handshake と配備機能の追加が前提。現行 RPC v1 検査だけで互換性確認済みと扱わない。
+SDK／CLI の handshake と一時起動は本版で追加。installer と選択 UI は未実装。
+[一時利用手順](TEMPORARY-HELPER.md) に従って、まず開発者が CLI で起動する。
+WiVRn `16bd3529` の `server/light_bridge_host.cpp:45` の kernel 設定成功後、`:50` の listener 作成より前に
+setup worker で `llb_check_kernel_usbip(handle)` を追加する。失敗なら広告／tracking 初期化を中断して診断する。
+現 checkout にはこの新 API 呼出は未追加。SDK／helper／WiVRn を同じ本版へ更新し、root RPC v1 と混在させない。
+Dashboard の管理者認証は後続。CLI 停止は通常 cleanup 完了後、runtime user が明示要求する。
 
 ## 目的と前提
 

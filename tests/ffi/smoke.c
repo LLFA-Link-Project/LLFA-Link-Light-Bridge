@@ -23,6 +23,7 @@ static void callback(void *userdata, uint32_t event, uint32_t state, const LlbPo
 int main(void) {
  LlbHandle *hmd=NULL,*host=NULL;
  LlbConfig cfg={sizeof(cfg),LLB_ABI_VERSION,LLB_HMD,1000,callback,&alive};
+ assert(llb_check_kernel_usbip(NULL)==1);
  assert(llb_create(NULL,&hmd)==1);
  assert(llb_create(&cfg,&hmd)==0);
  cfg.role=LLB_HOST;cfg.callback=NULL;

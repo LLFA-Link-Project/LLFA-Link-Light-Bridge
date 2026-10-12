@@ -79,6 +79,16 @@ TCP は明示選択した Mock／kernel backend を運ぶ。UDS は endpoint 通
 WiVRn の認証／既存 port を流用せず、実 WiVRn の Bridge endpoint 広告契約はまだ変更していない。
 USB helper の local credential 認証は Bridge remote TCP の認証にはならない。
 
+## Local privileged helper RPC（開発用配備更新）
+
+Bridge frame と別の JSON length-prefix protocol。現在 RPC v2、最大4096 bytes。
+Describe／Acquire／Release／Inspect／Shutdown と専用 compatibility ID を使用する。
+操作前に同一接続上の Describe で package version／compatibility ID／全 policy を照合し、
+helper 側も version／ID／peer UID／device を検証する。旧 helper RPC v1 は拒否する。
+Shutdown は一時 helper のみ、runtime acknowledgement と空 ownership journal が必要。
+Bridge TCP v3、C ABI v1、通知 UDS v1 は変更しない。
+詳細は [TEMPORARY-HELPER.md](TEMPORARY-HELPER.md)。
+
 ## Phase 4 ClockSync
 
 制御 lane の Request=11／Reply=12 は session ID と独立 request counter を持つ。

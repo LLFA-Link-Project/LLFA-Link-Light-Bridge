@@ -1,10 +1,14 @@
 # Phase 1 の実装判断と仕様との差分
 
-## Helper 配備の追加契約（2026-10-12、実装予定）
+## Helper 配備の追加契約（2026-10-12）
 
 ユーザー指定により、導入済み helper は互換性一致時だけ利用し、不一致なら Bridge 開始を中断して
 installer による更新を要求する。未導入時だけ installer 導入／管理者承認付き一時利用を選択可能にする。
-USB 操作前の handshake と専用 compatibility ID が必要。現行 RPC version=1 の検査だけでは満たさない。
+installer はユーザー指示で後回し。開発 CLI の一時起動／停止と SDK preflight を先行実装した。
+RPC v2 と専用 compatibility ID／package version／全 policy の照合を非 mutation handshake で行う。
+各操作も同一接続上で照合してから実行し、旧 RPC v1 は拒否する。Bridge TCP／UDS／ABI version は変更しない。
+一時起動は明示 sudo＋開発 binary 承認、root-protected /run snapshot、固定 transient service。
+installer／GUI／socket activation は未実装。runtime 終了だけでは停止せず、空 journal と runtime acknowledgement が必要。
 詳細と未実装項目は [HELPER-DEPLOYMENT-CONTRACT.md](HELPER-DEPLOYMENT-CONTRACT.md) を参照。
 
 1. **6 crate + headless harness**: 必須の HMD／Host library を維持し、IMU stub と clock DTO は core に置いた。

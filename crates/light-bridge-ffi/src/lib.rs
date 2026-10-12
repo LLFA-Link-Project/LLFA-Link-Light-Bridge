@@ -277,6 +277,27 @@ pub unsafe extern "C" fn llb_configure_kernel_usbip(
         }
     })
 }
+/// Blocking, non-mutating helper preflight. Call on the adapter setup worker before TCP/start.
+/// Configuration must already be set. Never invokes elevation or starts a helper.
+#[no_mangle]
+pub unsafe extern "C" fn llb_check_kernel_usbip(handle: *mut Handle) -> i32 {
+    guard(|| {
+        let h = handle.as_mut().ok_or(Error::InvalidArgument)?;
+        if !matches!(h.library, Library::Unlinked) || h.listener.is_some() {
+            return Err(Error::InvalidState);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let (socket, policy, instance) = h.kernel.as_ref().ok_or(Error::InvalidState)?;
+            light_bridge_usbip::helper::KernelUsbIp::new(socket.clone(), policy.clone(), *instance)?
+                .preflight()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            Err(Error::Unsupported)
+        }
+    })
+}
 fn guard(f: impl FnOnce() -> Result<()>) -> i32 {
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(Ok(())) => 0,
@@ -897,6 +918,8 @@ mod tests {
             };
             let mut h = std::ptr::null_mut();
             assert_eq!(llb_create(&config, &mut h), 0);
+            assert_eq!(llb_check_kernel_usbip(h), 2);
+            assert_eq!(llb_check_kernel_usbip(std::ptr::null_mut()), 1);
             let mut device = light_bridge_usbip::UsbDeviceIdentity::mock();
             device.busid = "1-3.3".into();
             device.sysfs_path = "/sys/devices/mock/1-3.3".into();

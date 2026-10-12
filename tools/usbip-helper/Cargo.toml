@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 light-bridge-usbip.workspace = true
 libc = "=0.2.190"
+serde_json = "=1.0.152"

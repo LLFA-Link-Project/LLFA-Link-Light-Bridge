@@ -1,5 +1,9 @@
 # Phase 3 Linux USB/IP Backend 実装・検証報告
 
+2026-10-12 更新: 開発用一時 helper／RPC v2／互換性 preflight を追加。
+現在の利用手順は [TEMPORARY-HELPER.md](TEMPORARY-HELPER.md)、新しい検証結果と未検証範囲は
+[TEMPORARY-HELPER-REPORT.md](TEMPORARY-HELPER-REPORT.md) を参照。以下は Phase 3 時点の検証記録。
+
 検証日: 2026-10-11。仕様: `LLFA-Link-Light-Bridge-IMPLEMENTATION-INSTRUCTIONS-v0.3.1.md`。
 **Backend のコードと Mock／故障試験を実装した。Phase 3 の実機合格条件は未達。**
 現 PC の Tracker のみで、Orange Pi／arpara HMD／両 runtime の実統合は未使用。

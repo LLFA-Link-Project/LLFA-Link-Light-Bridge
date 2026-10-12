@@ -7,6 +7,10 @@ Bridge の主動作核は両 runtime プロセス内に維持する。
 
 ## 実行
 
+開発用 helper は永続 service 登録なしで一時起動できる。
+明示 sudo 承認、互換性確認、正常 cleanup 後の停止手順は
+[TEMPORARY-HELPER.md](docs/TEMPORARY-HELPER.md) を参照。installer／Dashboard の選択 UI は未実装。
+
 Rust stable と C compiler が必要。C ヘッダは `build.rs` が Rust の build dependency
 `cbindgen` で自動生成する。Python／cbindgen CLI のインストールや手動の前処理は不要。
 初回は `cargo build --workspace --locked` で依存を取得する。キャッシュ後は offline ビルドできる。

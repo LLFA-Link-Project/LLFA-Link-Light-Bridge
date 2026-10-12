@@ -161,6 +161,12 @@ int32_t llb_configure_kernel_usbip(LlbHandle *handle,
                                    uint32_t policy_len,
                                    uint64_t instance);
 
+/**
+ * Blocking, non-mutating helper preflight. Call on the adapter setup worker before TCP/start.
+ * Configuration must already be set. Never invokes elevation or starts a helper.
+ */
+int32_t llb_check_kernel_usbip(LlbHandle *handle);
+
 int32_t llb_create(const LlbConfig *config, LlbHandle **out);
 
 int32_t llb_mock_link(LlbHandle *hmd, LlbHandle *host);

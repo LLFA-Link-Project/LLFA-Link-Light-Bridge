@@ -83,3 +83,11 @@ Dependencies must be cached before offline commands; `cargo fetch --locked` prep
 - Read `docs/PHASE-4-TIMING-SPEC.md` before changing clocks. CLOCK_MONOTONIC domain equality must be verified in each runtime environment.
 - ClockSync uses bounded control queues and separate request IDs; it must not advance lifecycle counters or keep heartbeat alive. Preserve uncertainty and invalidate unsynchronized, expired, discontinuous or wrong-domain mappings.
 - New timing APIs do not establish calibration/fusion or hardware acceptance. Update both runtime handoffs and report real versus synthetic source/clock/network/USB separately.
+
+## Development helper deployment
+
+- Installer work is deferred. Follow docs/TEMPORARY-HELPER.md and docs/HELPER-DEPLOYMENT-CONTRACT.md.
+- Helper RPC is v2; Bridge TCP v3, notification v1 and C ABI v1 remain unchanged. Bump the dedicated helper compatibility ID on privileged contract changes.
+- Check identity and exact policy before mutation on the same connection. A mismatch or unknown/stopped installation must not silently use a temporary helper or Mock.
+- Temporary startup requires explicit administrator approval of the development binary, protected /run staging and fixed transient systemd arguments. Never enable persistent units or add broad sudoers rules.
+- Normal temporary shutdown requires runtime acknowledgement and an empty ownership journal. Retain uncertain resources; no automatic journal removal or immediate shutdown on runtime exit.

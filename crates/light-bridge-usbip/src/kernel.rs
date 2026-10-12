@@ -18,7 +18,7 @@ pub enum Role {
     Export,
     Import,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
     pub role: Role,
@@ -814,7 +814,8 @@ mod tests {
         )
         .unwrap();
         let r = Request {
-            version: 1,
+            version: crate::helper::RPC_VERSION,
+            compatibility_id: crate::helper::COMPATIBILITY_ID.into(),
             instance: 9,
             session: 1,
             action: Action::Acquire,
@@ -823,6 +824,53 @@ mod tests {
         };
         assert!(dispatch(&mut e, 2000, r).result.is_err());
         assert_eq!(e.ops.calls, 0);
+    }
+    #[test]
+    fn helper_compatibility_precedes_mutation_and_shutdown_preserves_ownership() {
+        use crate::helper::{self, Action};
+        let mut e = Engine::new(
+            policy(Role::Export),
+            FakeOps::new(),
+            MemoryJournal::default(),
+        )
+        .unwrap();
+        let uid = e.policy.client_uid;
+        let describe =
+            helper::dispatch(&mut e, uid, helper::describe_request(&policy(Role::Export)));
+        assert!(describe.result.is_ok());
+        helper::validate_response(&describe, &e.policy).unwrap();
+        assert_eq!(e.ops.calls, 0);
+        let mut incompatible = helper::describe_request(&e.policy);
+        incompatible.action = Action::Acquire;
+        incompatible.session = 1;
+        incompatible.compatibility_id = "same-package-different-contract".into();
+        assert!(helper::dispatch(&mut e, uid, incompatible).result.is_err());
+        assert_eq!(e.ops.calls, 0);
+        let mut old = helper::describe_request(&e.policy);
+        old.version = 1;
+        assert!(helper::dispatch(&mut e, uid, old).result.is_err());
+        assert_eq!(e.ops.calls, 0);
+        let mut shutdown = helper::describe_request(&e.policy);
+        shutdown.action = Action::Shutdown;
+        assert!(helper::dispatch(&mut e, uid, shutdown).result.is_err());
+        let mut shutdown = helper::describe_request(&e.policy);
+        shutdown.action = Action::Shutdown;
+        shutdown.runtime_released = true;
+        assert!(helper::dispatch(&mut e, uid, shutdown).result.is_ok());
+        assert_eq!(e.ops.calls, 0);
+        let mut acquire = helper::describe_request(&e.policy);
+        acquire.action = Action::Acquire;
+        acquire.session = 1;
+        assert!(helper::dispatch(&mut e, uid, acquire).result.is_ok());
+        let calls = e.ops.calls;
+        let mut shutdown = helper::describe_request(&e.policy);
+        shutdown.action = Action::Shutdown;
+        shutdown.runtime_released = true;
+        let denied = helper::dispatch(&mut e, uid, shutdown);
+        assert!(denied.result.is_err());
+        assert!(denied.pending);
+        assert_eq!(e.ops.calls, calls);
+        assert!(e.record().is_some());
     }
     #[test]
     fn file_journal_is_durable_and_crash_temp_blocks_overwrite() {

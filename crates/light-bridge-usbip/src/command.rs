@@ -104,6 +104,53 @@ pub fn run(operation: &Operation, timeout: Duration, cancel: &AtomicBool) -> Res
     let program = executable().map_err(|e| e.to_string())?;
     run_program(program, &operation.arguments(), timeout, cancel)
 }
+/// Fixed transient service launch, used only by the explicitly root-authorized CLI.
+pub fn start_temporary_service(role: &str, executable: &Path, policy: &Path) -> Result<(), String> {
+    let args = temporary_service_arguments(role, executable, policy)?;
+    // No implicit polkit/sudo prompt from a library call.
+    if unsafe { libc::geteuid() } != 0 {
+        return Err("explicit root authorization required".into());
+    }
+    for path in [executable, policy, Path::new("/usr/bin/systemd-run")] {
+        trusted(path).map_err(|e| e.to_string())?;
+    }
+    run_program(
+        Path::new("/usr/bin/systemd-run"),
+        &args,
+        Duration::from_secs(10),
+        &AtomicBool::new(false),
+    )
+}
+fn temporary_service_arguments(
+    role: &str,
+    executable: &Path,
+    policy: &Path,
+) -> Result<Vec<String>, String> {
+    if !matches!(role, "export" | "import") {
+        return Err("temporary role invalid".into());
+    }
+    let expected = format!("/run/llfa-link-light-bridge/temporary-{role}");
+    if executable != Path::new(&expected).join("helper")
+        || policy != Path::new(&expected).join("policy.json")
+    {
+        return Err("fixed staging paths required".into());
+    }
+    let args = vec![
+        format!("--unit=llb-usbip-temporary-{role}"),
+        "--collect".into(),
+        "--service-type=exec".into(),
+        "--property=User=root".into(),
+        "--property=Group=root".into(),
+        "--property=UMask=0077".into(),
+        "--property=Restart=no".into(),
+        "--property=NoNewPrivileges=yes".into(),
+        "--property=WorkingDirectory=/".into(),
+        executable.to_string_lossy().into_owned(),
+        "serve-temporary".into(),
+        policy.to_string_lossy().into_owned(),
+    ];
+    Ok(args)
+}
 fn run_program(
     program: &Path,
     args: &[String],
@@ -176,6 +223,27 @@ fn run_program(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn transient_launch_rejects_arbitrary_program_role_and_policy_paths() {
+        let exe = Path::new("/run/llfa-link-light-bridge/temporary-export/helper");
+        let policy = Path::new("/run/llfa-link-light-bridge/temporary-export/policy.json");
+        let args = temporary_service_arguments("export", exe, policy).unwrap();
+        assert!(args.contains(&"--service-type=exec".into()));
+        assert!(args.contains(&"--property=Restart=no".into()));
+        assert!(args.contains(&"--collect".into()));
+        assert_eq!(
+            &args[args.len() - 3..],
+            &[
+                exe.to_str().unwrap(),
+                "serve-temporary",
+                policy.to_str().unwrap()
+            ]
+        );
+        assert!(temporary_service_arguments("export;sh", exe, policy).is_err());
+        assert!(temporary_service_arguments("export", Path::new("/usr/bin/sh"), policy).is_err());
+        assert!(temporary_service_arguments("export", exe, Path::new("/tmp/user.json")).is_err());
+        assert!(temporary_service_arguments("import", exe, policy).is_err());
+    }
     #[test]
     fn timeout_reaps_process_group_and_checks_exit() {
         let cancel = AtomicBool::new(false);

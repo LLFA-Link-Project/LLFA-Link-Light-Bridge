@@ -1,11 +1,16 @@
 # Monado 担当 Codex への LLFA Bridge 組み込み指示書
 
-## Helper 配備の追加要求（2026-10-12、未実装）
+## Helper 配備の追加要求（2026-10-12）
 
 [Helper 利用契約](HELPER-DEPLOYMENT-CONTRACT.md) を次の導入設計に適用する。
 導入済み互換 helper を利用、不一致なら開始中断と更新要求、未導入だけ installer／一時管理者利用の選択。
-UI のない Monado は launcher に構造化した診断を渡す。現行 RPC v1 検査は build 互換性検査ではない。
-SDK 側 handshake と配備機能の追加が前提。USB 操作前の判定と既存 cleanup barrier を維持する。
+UI のない Monado は launcher に構造化した診断を渡す。
+SDK／CLI の handshake と一時起動は本版で追加。installer と選択 UI は未実装。
+[一時利用手順](TEMPORARY-HELPER.md) に従って、まず開発者が CLI で起動する。
+Monado `978e79022` の `target_llfa_bridge.cpp:84` の kernel 設定成功後、`:333` の TCP 接続より前に
+control/setup worker で `llb_check_kernel_usbip(handle)` を追加する。失敗なら Start 試行を中断して診断する。
+現 checkout にはこの新 API 呼出は未追加。SDK／helper／Monado を同じ本版へ更新し、root RPC v1 と混在させない。
+USB 操作前の判定と既存 cleanup barrier を維持する。CLI 停止は通常 cleanup 完了後、runtime user が明示要求する。
 
 ## 目的と前提
 

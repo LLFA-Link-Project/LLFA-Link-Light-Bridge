@@ -81,6 +81,11 @@ Linux の kernel backend は接続設定前に一度だけ
 設定は helper 起動／特権操作を行わない。未設定の generic TCP API は Mock を選ぶ。
 設定済み handle に `_mock` API／`llb_mock_link` を適用すると拒否する。
 
+開発用 helper 更新: 設定後、TCP 設定前に `llb_check_kernel_usbip(handle)` を setup worker で呼ぶ。
+root peer／保護された socket／RPC v2／専用 compatibility ID／package version／全 policy と空 journal を確認する。
+blocking、helper 起動／管理者認証なし。不一致は Protocol、残留 ownership は Ownership、未設定／接続後は InvalidState。
+各操作の worker RPC でも同一接続で再検証する。一時起動の CLI は [TEMPORARY-HELPER.md](TEMPORARY-HELPER.md)。
+
 Host は `llb_tcp_listen` → `llb_tcp_accept`、HMD は `llb_tcp_connect`。
 設定の deadline と listener 再試行契約は上記 Mock API と同じ。
 USB export/import/detach/unexport は専用 worker が実行し、poll は completion を処理する。

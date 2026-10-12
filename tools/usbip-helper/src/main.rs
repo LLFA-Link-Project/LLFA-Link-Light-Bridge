@@ -1,5 +1,38 @@
 #[cfg(target_os = "linux")]
+mod temporary;
+#[cfg(target_os = "linux")]
 fn main() {
+    if let Err(e) = entry() {
+        eprintln!("usbip-helper: {e}");
+        std::process::exit(1);
+    }
+}
+#[cfg(target_os = "linux")]
+fn entry() -> Result<(), String> {
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    match args.first().and_then(|v| v.to_str()) {
+        Some("temporary-start") if args.len() == 3 && args[2] == "--acknowledge-development-build" => {
+            temporary::start(std::path::Path::new(&args[1]))
+        }
+        Some("check") if args.len() == 2 => temporary::check(std::path::Path::new(&args[1])),
+        Some("temporary-stop") if args.len() == 3 && args[2] == "--runtime-stopped" => {
+            temporary::stop(std::path::Path::new(&args[1]))
+        }
+        Some("serve" | "serve-temporary") if args.len() == 2 => {
+            serve(std::path::Path::new(&args[1]), args[0] == "serve-temporary");
+            Ok(())
+        }
+        Some("--version") if args.len() == 1 => {
+            println!("usbip-helper {} compatibility={} RPC={} build={}", env!("CARGO_PKG_VERSION"),
+                light_bridge_usbip::helper::COMPATIBILITY_ID, light_bridge_usbip::helper::RPC_VERSION,
+                option_env!("LLB_BUILD_REVISION").unwrap_or("unspecified"));
+            Ok(())
+        }
+        _ => Err("Usage: usbip-helper check POLICY | temporary-start POLICY --acknowledge-development-build (sudo) | temporary-stop POLICY --runtime-stopped | serve ROOT_POLICY | --version".into()),
+    }
+}
+#[cfg(target_os = "linux")]
+fn serve(policy_path: &std::path::Path, temporary: bool) {
     use light_bridge_usbip::{
         helper::{self, Request},
         kernel::{Engine, FileJournal, LinuxOps, Role},
@@ -17,24 +50,23 @@ fn main() {
         sync::{atomic::AtomicBool, Arc},
         time::{Duration, Instant},
     };
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args.len() != 2 || args[0] != "serve" {
-        eprintln!(
-            "Usage: usbip-helper serve /etc/llfa-link-light-bridge/export.json (or import.json)"
-        );
-        std::process::exit(2);
-    }
     // SAFETY: geteuid has no pointer arguments or side effects.
     if unsafe { libc::geteuid() } != 0 {
         eprintln!("helper requires root; runtime libraries do not");
         std::process::exit(1);
     }
-    let policy = helper::load_policy(std::path::Path::new(&args[1])).expect("trusted exact policy");
+    let policy = helper::load_policy(policy_path).expect("trusted exact policy");
     let role = if policy.role == Role::Export {
         "export"
     } else {
         "import"
     };
+    if temporary {
+        assert_eq!(
+            policy_path,
+            temporary::stage(engine_role(role)).join("policy.json")
+        );
+    }
     let root = PathBuf::from("/var/lib/llfa-link-light-bridge");
     for path in [&root, &PathBuf::from("/run/llfa-link-light-bridge")] {
         let mode = if path == &root { 0o700 } else { 0o711 };
@@ -91,6 +123,7 @@ fn main() {
         0
     );
     fs::set_permissions(&socket, fs::Permissions::from_mode(0o660)).unwrap();
+    let socket_identity = fs::symlink_metadata(&socket).unwrap();
     eprintln!(
         "Listening: {} (authorized UID {})",
         socket.display(),
@@ -105,22 +138,53 @@ fn main() {
             }
         };
         let uid = match helper::peer_uid(&stream) {
-            Ok(uid) if uid == engine.policy.client_uid => uid,
+            Ok(uid) if uid == engine.policy.client_uid || uid == 0 => uid,
             _ => continue,
         };
         let end = Instant::now() + Duration::from_secs(12);
-        let request: Request = match helper::receive(&mut stream, end, &cancel) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("request: {e}");
-                continue;
+        for _ in 0..2 {
+            let request: Request = match helper::receive(&mut stream, end, &cancel) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("request: {e}");
+                    break;
+                }
+            };
+            let shutdown = matches!(request.action, helper::Action::Shutdown);
+            let describe = matches!(request.action, helper::Action::Describe);
+            if shutdown && !temporary {
+                eprintln!("shutdown of an installed helper is not a runtime RPC");
+                break;
             }
-        };
-        let response = helper::dispatch(&mut engine, uid, request);
-        if let Err(e) = &response.result {
-            eprintln!("operation: {e}");
+            let response = helper::dispatch(&mut engine, uid, request);
+            if let Err(e) = &response.result {
+                eprintln!("operation: {e}");
+            }
+            let _ = helper::send(&mut stream, &response, end, &cancel);
+            if shutdown && response.result.is_ok() {
+                drop(listener);
+                let current = fs::symlink_metadata(&socket).unwrap();
+                if current.dev() == socket_identity.dev() && current.ino() == socket_identity.ino()
+                {
+                    fs::remove_file(&socket).unwrap();
+                } else {
+                    panic!("socket replaced; retain deployment for audit");
+                }
+                temporary::remove_stage(engine_role(role)).expect("retain stage on cleanup error");
+                return;
+            }
+            if !describe || response.result.is_err() {
+                break;
+            }
         }
-        let _ = helper::send(&mut stream, &response, end, &cancel);
+    }
+}
+#[cfg(target_os = "linux")]
+fn engine_role(role: &str) -> light_bridge_usbip::kernel::Role {
+    if role == "export" {
+        light_bridge_usbip::kernel::Role::Export
+    } else {
+        light_bridge_usbip::kernel::Role::Import
     }
 }
 #[cfg(not(target_os = "linux"))]
